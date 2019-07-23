@@ -109,14 +109,7 @@ class ConfluxEthReplayTest(ConfluxTestFramework):
 
     def setup_network(self):
         if self.remote:
-            binary_path = ["/home/ubuntu/conflux"]
-            for ip in self.ips:
-                self.add_remote_nodes(1, user="ubuntu", ip=ip, binary=binary_path, no_pssh=True)
-            for i in range(len(self.nodes)):
-                self.log.info("Node " + str(i) + " bind to " + self.nodes[i].ip + ":" + self.nodes[i].port)
-            self.start_nodes()
-            self.log.info("All nodes started, waiting to be connected")
-            connect_sample_nodes(nodes=self.nodes, log=self.log, sample=7, latency_min=0, latency_max=300)
+            raise RuntimeError("This branch doesn't support remote nodes.")
         else:
             self.setup_nodes(binary=[os.path.join(
                 os.path.dirname(os.path.realpath(__file__)),
@@ -137,7 +130,7 @@ class ConfluxEthReplayTest(ConfluxTestFramework):
             block_gen_thread.start()
             node_id += 1
 
-        tx_file_path = "/home/ubuntu/convert_eth_from_0_to_4141811_unknown_txs.rlp"
+        tx_file_path = "/home/mk/convert_eth_from_0_to_4141811_unknown_txs.rlp"
         f = open(tx_file_path, "rb")
 
         start_time = datetime.datetime.now()
