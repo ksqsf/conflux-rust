@@ -92,7 +92,7 @@ class ConfluxEthReplayTest(ConfluxTestFramework):
         else:
             self.num_nodes = 1
 
-        self.conf_parameters = {"log_level": "\"debug\"",
+        self.conf_parameters = {"log_level": "\"error\"",
                                 # "storage_cache_start_size": "1000000",
                                 # Do not re-alloc.
                                 "storage_cache_start_size": "20000000",
@@ -130,7 +130,7 @@ class ConfluxEthReplayTest(ConfluxTestFramework):
             block_gen_thread.start()
             node_id += 1
 
-        tx_file_path = "/home/mk/convert_eth_from_0_to_4141811_unknown_txs.rlp"
+        tx_file_path = "/Users/kaima/convert_eth_from_0_to_4141811_unknown_txs.rlp"
         f = open(tx_file_path, "rb")
 
         start_time = datetime.datetime.now()
@@ -332,7 +332,7 @@ class ConfluxEthReplayTest(ConfluxTestFramework):
         self.log.info("100%% Ethereum Transactions completely replayed. Time used: %f seconds", time_used)
         self.log.info("Transaction per second: %f", tx_count / time_used)
 
-        time.sleep(2000000000)
+        time.sleep(20000000)
 
 
 class BlockGenThread(threading.Thread):
