@@ -34,6 +34,12 @@ impl NodeRefDeltaMptCompact {
     const PERSISTENT_KEY_BIT: u32 = 0x80000000;
 
     pub fn new(value: u32) -> Self { Self { value } }
+
+    pub fn is_dirty(&self) -> bool { !self.is_committed() }
+
+    pub fn is_committed(&self) -> bool {
+        (self.value & Self::PERSISTENT_KEY_BIT) != 0
+    }
 }
 
 impl MaybeNodeRefDeltaMptCompact {
@@ -42,14 +48,51 @@ impl MaybeNodeRefDeltaMptCompact {
         MaybeNodeRefDeltaMptCompact { value: Self::NULL };
 
     pub fn new(value: u32) -> Self { Self { value } }
+
+    pub fn is_none(&self) -> bool { *self == Self::NULL_NODE }
+
+    pub fn is_some(&self) -> bool { !self.is_none() }
+
+    pub fn is_dirty(&self) -> bool { !self.is_committed() }
+
+    pub fn is_committed(&self) -> bool {
+        (self.value & NodeRefDeltaMptCompact::PERSISTENT_KEY_BIT) != 0
+    }
 }
 
 // Manages access to a TrieNode. Converted from MaybeNodeRef. NodeRef is not
 // copy because it controls access to TrieNode.
 #[derive(Clone, Eq, PartialOrd, PartialEq, Ord)]
 pub enum NodeRefDeltaMpt {
-    Committed { db_key: DeltaMptDbKey },
-    Dirty { index: ActualSlabIndex },
+    Committed {
+        db_key: DeltaMptDbKey,
+    },
+    Dirty {
+        index: ActualSlabIndex,
+        original_db_key: Option<DeltaMptDbKey>,
+    },
+}
+
+impl NodeRefDeltaMpt {
+    /// Returns the db key to the original node (old version found in the database). Returns None if this node ref is clean (Committed).
+    pub fn original_db_key(&self) -> Option<DeltaMptDbKey> {
+        match self {
+            NodeRefDeltaMpt::Committed { .. } => None,
+            NodeRefDeltaMpt::Dirty {
+                original_db_key, ..
+            } => original_db_key.clone(),
+        }
+    }
+
+    pub fn is_committed(&self) -> bool { !self.is_dirty() }
+
+    pub fn is_dirty(&self) -> bool {
+        if let NodeRefDeltaMpt::Dirty { .. } = self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact {
@@ -58,7 +101,7 @@ impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact {
             NodeRefDeltaMpt::Committed { db_key } => Self {
                 value: db_key ^ NodeRefDeltaMptCompact::PERSISTENT_KEY_BIT,
             },
-            NodeRefDeltaMpt::Dirty { index } => Self {
+            NodeRefDeltaMpt::Dirty { index, .. } => Self {
                 value: index ^ NodeRefDeltaMptCompact::DIRTY_SLOT_LIMIT,
             },
         }
@@ -67,9 +110,10 @@ impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact {
 
 impl From<NodeRefDeltaMptCompact> for NodeRefDeltaMpt {
     fn from(x: NodeRefDeltaMptCompact) -> Self {
-        if NodeRefDeltaMptCompact::PERSISTENT_KEY_BIT & x.value == 0 {
+        if x.is_dirty() {
             NodeRefDeltaMpt::Dirty {
                 index: (NodeRefDeltaMptCompact::DIRTY_SLOT_LIMIT ^ x.value),
+                original_db_key: None,
             }
         } else {
             NodeRefDeltaMpt::Committed {
@@ -81,7 +125,7 @@ impl From<NodeRefDeltaMptCompact> for NodeRefDeltaMpt {
 
 impl From<MaybeNodeRefDeltaMptCompact> for Option<NodeRefDeltaMpt> {
     fn from(x: MaybeNodeRefDeltaMptCompact) -> Self {
-        if x.value == MaybeNodeRefDeltaMptCompact::NULL {
+        if x.is_none() {
             None
         } else {
             Some(NodeRefDeltaMptCompact::new(x.value).into())

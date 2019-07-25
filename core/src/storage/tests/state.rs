@@ -162,7 +162,7 @@ fn test_get_set_at_second_commit() {
         assert_eq!(equal, true);
     }
 
-    let mut epoch_id_1 = H256::default();;
+    let mut epoch_id_1 = H256::default();
     epoch_id_1[0] = 2;
     state_1.compute_state_root().unwrap();
     state_1.commit(epoch_id_1).unwrap();

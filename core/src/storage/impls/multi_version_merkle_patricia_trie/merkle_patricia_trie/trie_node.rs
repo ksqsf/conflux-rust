@@ -539,12 +539,10 @@ impl<CacheAlgoDataT: CacheAlgoDataTrait> TrieNode<CacheAlgoDataT> {
         let mut ret = TrieNode::default();
 
         match new_value {
-            Some(maybe_value) => match maybe_value {
-                Some(value) => {
-                    ret.replace_value_valid(value);
-                }
-                None => {}
-            },
+            Some(Some(value)) => {
+                ret.replace_value_valid(value);
+            }
+            Some(None) => {}
             None => {
                 let value_size = self.value_size as usize;
                 ret.value_size = self.value_size;

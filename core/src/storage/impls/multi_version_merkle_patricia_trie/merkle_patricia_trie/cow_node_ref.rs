@@ -11,6 +11,8 @@
 /// ownership of any trie node is not transferred more than once at the same
 /// time.
 pub struct CowNodeRef {
+    // If a CowNodeRef is owned, the trie node must be in memory (allocator),
+    // and the node ref must be in an owned node set.
     owned: bool,
     pub node_ref: NodeRefDeltaMpt,
 }
@@ -94,7 +96,7 @@ impl CowNodeRef {
     ) -> Result<(Self, SlabVacantEntryDeltaMpt<'a>)>
     {
         let (node_ref, new_entry) =
-            NodeMemoryManagerDeltaMpt::new_node(allocator)?;
+            NodeMemoryManagerDeltaMpt::new_node(allocator, None)?;
         owned_node_set.insert(node_ref.clone());
 
         Ok((
@@ -147,9 +149,15 @@ impl CowNodeRef {
         if self.owned {
             Ok(None)
         } else {
+//            let original_db_key = match self.node_ref {
+//                NodeRefDeltaMpt::Committed { db_key } => Some(db_key),
+//                NodeRefDeltaMpt::Dirty { .. } => self.node_ref.original_db_key(),
+//            };
             // Similar to Self::new_uninitialized_node().
-            let (node_ref, new_entry) =
-                NodeMemoryManagerDeltaMpt::new_node(&allocator)?;
+            let (node_ref, new_entry) = NodeMemoryManagerDeltaMpt::new_node(
+                &allocator,
+                None, // FIXME(mk) Use a dbkey here will fool something into thinking two keys are different? leading to panic (Drop for CowNodeRef)
+            )?;
             owned_node_set.insert(node_ref.clone());
             self.node_ref = node_ref;
             self.owned = true;
@@ -342,6 +350,7 @@ impl CowNodeRef {
                     &mut self.node_ref,
                 )
             };
+
             let children_merkles = self.get_or_compute_children_merkles(
                 trie,
                 owned_node_set,
@@ -371,40 +380,106 @@ impl CowNodeRef {
         }
     }
 
+    fn compute_children_merkles(
+        &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
+        trie_node: &mut TrieNodeDeltaMpt,
+        allocator_ref: AllocatorRefRefDeltaMpt,
+    ) -> Result<MaybeMerkleTable>
+    {
+        let mut merkles = ChildrenMerkleTable::default();
+        for (i, maybe_node_ref) in trie_node.children_table.iter_non_skip() {
+            match maybe_node_ref {
+                None => merkles[i as usize] = MERKLE_NULL_NODE,
+                Some(node_ref) => {
+                    let mut cow_child_node =
+                        Self::new((*node_ref).into(), owned_node_set);
+                    let result = cow_child_node.get_or_compute_merkle(
+                        trie,
+                        owned_node_set,
+                        allocator_ref,
+                    );
+                    // There is no change to the child reference so the
+                    // return value is dropped.
+                    cow_child_node.into_child();
+
+                    merkles[i as usize] = result?;
+                }
+            }
+        }
+        Ok(Some(merkles))
+    }
+
     fn get_or_compute_children_merkles(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
         trie_node: &mut TrieNodeDeltaMpt,
         allocator_ref: AllocatorRefRefDeltaMpt,
     ) -> Result<MaybeMerkleTable>
     {
-        match trie_node.children_table.get_children_count() {
-            0 => Ok(None),
-            _ => {
-                let mut merkles = ChildrenMerkleTable::default();
-                for (i, maybe_node_ref_mut) in
-                    trie_node.children_table.iter_non_skip()
-                {
-                    match maybe_node_ref_mut {
-                        None => merkles[i as usize] = MERKLE_NULL_NODE,
-                        Some(node_ref_mut) => {
-                            let mut cow_child_node = Self::new(
-                                (*node_ref_mut).into(),
-                                owned_node_set,
-                            );
-                            let result = cow_child_node.get_or_compute_merkle(
-                                trie,
-                                owned_node_set,
-                                allocator_ref,
-                            );
-                            // There is no change to the child reference so the
-                            // return value is dropped.
-                            cow_child_node.into_child();
+        match (
+            trie_node.children_table.get_children_count(),
+            self.node_ref.original_db_key(),
+        ) {
+            (0, _) => Ok(None),
+            (_, None) => {
+                return self.compute_children_merkles(
+                    trie,
+                    owned_node_set,
+                    trie_node,
+                    allocator_ref,
+                );
+            }
+            (_, Some(db_key)) => {
+                let merkles = trie
+                    .get_node_memory_manager()
+                    .load_children_merkles_from_db(db_key);
 
-                            merkles[i as usize] = result?;
+                match merkles {
+                    Err(_) | Ok(None) => {
+                        // merkles not found in db or errors occurred in merkle
+                        // db, fallback
+                        self.compute_children_merkles(
+                            trie,
+                            owned_node_set,
+                            trie_node,
+                            allocator_ref,
+                        )
+                    }
+                    Ok(Some(mut merkles)) => {
+                        for (i, maybe_node_ref) in
+                            trie_node.children_table.iter_non_skip()
+                        {
+                            match maybe_node_ref {
+                                None => {
+                                    // child might be deleted, setting to null
+                                    // anyway
+                                    merkles[i as usize] = MERKLE_NULL_NODE;
+                                }
+                                Some(compact_node_ref)
+                                    if compact_node_ref.is_dirty() =>
+                                {
+                                    let mut cow_child_node = Self::new(
+                                        (*compact_node_ref).into(),
+                                        owned_node_set,
+                                    );
+                                    let result = cow_child_node
+                                        .get_or_compute_merkle(
+                                            trie,
+                                            owned_node_set,
+                                            allocator_ref,
+                                        );
+                                    cow_child_node.into_child().unwrap();
+                                    merkles[i as usize] = result?;
+                                }
+                                _ => {
+                                    // node_ref is Committed.
+                                    // In this case, the merkles loaded from db
+                                    // are correct.  Do nothing here.
+                                }
+                            }
                         }
+                        Ok(Some(merkles))
                     }
                 }
-                Ok(Some(merkles))
             }
         }
     }
@@ -487,7 +562,7 @@ impl CowNodeRef {
                 commit_transaction.info.row_number.get_next()?;
 
             let slot = match &self.node_ref {
-                NodeRefDeltaMpt::Dirty { index } => *index,
+                NodeRefDeltaMpt::Dirty { index, .. } => *index,
                 _ => unsafe { unreachable_unchecked() },
             };
             let committed_node_ref = NodeRefDeltaMpt::Committed { db_key };

@@ -351,7 +351,7 @@ impl<'a> State<'a> {
                 let db_key = *{
                     match self.delta_trie_root.as_ref().unwrap() {
                         // Dirty state are committed.
-                        NodeRefDeltaMpt::Dirty { index: _ } => unsafe {
+                        NodeRefDeltaMpt::Dirty { .. } => unsafe {
                             unreachable_unchecked();
                         },
                         // Empty block's state root points to its base state.

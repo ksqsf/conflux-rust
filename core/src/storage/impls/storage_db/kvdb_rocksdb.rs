@@ -13,8 +13,23 @@ impl DeltaDbTrait for KvdbRocksdb {
     }
 }
 
+impl MerkleDbTrait for KvdbRocksdb {
+    #[inline]
+    fn get_children_merkles_data(
+        &self, key: &[u8],
+    ) -> Result<Option<Box<[u8]>>> {
+        Ok(self
+            .kvdb
+            .get(COL_CHILDREN_MERKLES, key)?
+            .map(|elastic_array| elastic_array.into_vec().into_boxed_slice()))
+    }
+}
+
 use super::super::{
-    super::{super::db::COL_DELTA_TRIE, storage_db::delta_db::DeltaDbTrait},
+    super::{
+        super::db::{COL_CHILDREN_MERKLES, COL_DELTA_TRIE},
+        storage_db::{delta_db::DeltaDbTrait, merkle_db::*},
+    },
     errors::*,
 };
 use kvdb::KeyValueDB;

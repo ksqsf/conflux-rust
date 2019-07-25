@@ -41,8 +41,10 @@ pub const COL_TX_ADDRESS: Option<u32> = Some(4);
 pub const COL_EPOCH_SET_HASHES: Option<u32> = Some(5);
 /// Column for Execution Context.
 pub const COL_EXECUTION_CONTEXT: Option<u32> = Some(6);
+/// Column for saving children Merkle hashes of a MPT node.
+pub const COL_CHILDREN_MERKLES: Option<u32> = Some(7);
 /// Number of columns in DB
-pub const NUM_COLUMNS: Option<u32> = Some(7);
+pub const NUM_COLUMNS: Option<u32> = Some(8);
 
 /// Modes for updating caches.
 #[derive(Clone, Copy)]
