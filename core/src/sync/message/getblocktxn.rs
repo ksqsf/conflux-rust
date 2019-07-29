@@ -4,13 +4,19 @@
 
 use crate::sync::{
     message::{
-        GetBlockTxnResponse, Message, MsgId, Request, RequestContext, RequestId,
+        Context, GetBlockTxnResponse, GetBlocks, Handleable, KeyContainer,
+        Message, MsgId, RequestId,
     },
-    Error, ErrorKind,
+    request_manager::Request,
+    Error, ErrorKind, ProtocolConfiguration,
 };
 use cfx_types::H256;
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
-use std::ops::{Deref, DerefMut};
+use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 #[derive(Debug, PartialEq, Default)]
 pub struct GetBlockTxn {
@@ -20,8 +26,36 @@ pub struct GetBlockTxn {
 }
 
 impl Request for GetBlockTxn {
-    fn handle(&self, context: &RequestContext) -> Result<(), Error> {
-        match context.graph.block_by_hash(&self.block_hash) {
+    fn set_request_id(&mut self, request_id: u64) {
+        self.request_id.set_request_id(request_id)
+    }
+
+    fn as_message(&self) -> &Message { self }
+
+    fn as_any(&self) -> &Any { self }
+
+    fn timeout(&self, conf: &ProtocolConfiguration) -> Duration {
+        conf.blocks_request_timeout
+    }
+
+    fn on_removed(&self, _inflight_keys: &mut KeyContainer) {}
+
+    fn with_inflight(&mut self, _inflight_keys: &mut KeyContainer) {}
+
+    fn is_empty(&self) -> bool { false }
+
+    fn resend(&self) -> Option<Box<Request>> {
+        Some(Box::new(GetBlocks {
+            request_id: 0.into(),
+            with_public: true,
+            hashes: vec![self.block_hash.clone()],
+        }))
+    }
+}
+
+impl Handleable for GetBlockTxn {
+    fn handle(self, ctx: &Context) -> Result<(), Error> {
+        match ctx.manager.graph.block_by_hash(&self.block_hash) {
             Some(block) => {
                 debug!("Process get_blocktxn hash={:?}", block.hash());
                 let mut tx_resp = Vec::with_capacity(self.indexes.len());
@@ -31,7 +65,7 @@ impl Request for GetBlockTxn {
                     if last >= block.transactions.len() {
                         warn!(
                             "Request tx index out of bound, peer={}, hash={}",
-                            context.peer,
+                            ctx.peer,
                             block.hash()
                         );
                         return Err(ErrorKind::Invalid.into());
@@ -45,7 +79,7 @@ impl Request for GetBlockTxn {
                     block_txn: tx_resp,
                 };
 
-                context.send_response(&response)
+                ctx.send_response(&response)
             }
             None => {
                 warn!(
@@ -59,7 +93,7 @@ impl Request for GetBlockTxn {
                     block_txn: Vec::new(),
                 };
 
-                context.send_response(&response)
+                ctx.send_response(&response)
             }
         }
     }
@@ -67,6 +101,8 @@ impl Request for GetBlockTxn {
 
 impl Message for GetBlockTxn {
     fn msg_id(&self) -> MsgId { MsgId::GET_BLOCK_TXN }
+
+    fn msg_name(&self) -> &'static str { "GetBlockTxn" }
 }
 
 impl Deref for GetBlockTxn {

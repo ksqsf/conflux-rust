@@ -10,9 +10,10 @@ use blockgen::BlockGenerator;
 
 use cfxcore::{
     genesis, pow::WORKER_COMPUTATION_PARALLELISM, statistics::Statistics,
-    storage::StorageManager, transaction_pool::DEFAULT_MAX_BLOCK_GAS_LIMIT,
-    vm_factory::VmFactory, ConsensusGraph, SynchronizationGraph,
-    SynchronizationService, TransactionPool,
+    storage::StorageManager, sync::SyncPhaseType,
+    transaction_pool::DEFAULT_MAX_BLOCK_GAS_LIMIT, vm_factory::VmFactory,
+    ConsensusGraph, SynchronizationGraph, SynchronizationService,
+    TransactionPool,
 };
 
 use crate::rpc::{
@@ -178,7 +179,7 @@ impl ArchiveClient {
         let vm = VmFactory::new(1024 * 32);
         let pow_config = conf.pow_config();
         let consensus = Arc::new(ConsensusGraph::new(
-            conf.consensus_config(data_man.get_instance_id()),
+            conf.consensus_config(),
             vm.clone(),
             txpool.clone(),
             statistics.clone(),
@@ -189,24 +190,26 @@ impl ArchiveClient {
         let protocol_config = conf.protocol_config();
         let verification_config = conf.verification_config();
 
+        let sync_graph = Arc::new(SynchronizationGraph::new(
+            consensus.clone(),
+            verification_config,
+            pow_config,
+            false,
+        ));
+
         let network = {
             let mut network = NetworkService::new(network_config);
             network.start().unwrap();
             Arc::new(network)
         };
 
-        let sync_graph = Arc::new(SynchronizationGraph::new(
-            consensus.clone(),
-            verification_config,
-            pow_config,
-        ));
-
+        let initial_sync_phase = SyncPhaseType::CatchUpRecoverBlockFromDB;
         let sync = Arc::new(SynchronizationService::new(
             false,
             network.clone(),
-            consensus.clone(),
             sync_graph.clone(),
             protocol_config,
+            initial_sync_phase,
         ));
         sync.register().unwrap();
 
@@ -235,6 +238,9 @@ impl ArchiveClient {
 
         let blockgen_config = conf.blockgen_config();
         if let Some(chain_path) = blockgen_config.test_chain_path {
+            // make sure db recovery has completed
+            thread::sleep(Duration::from_secs(7));
+
             let file_path = Path::new(&chain_path);
             let file = File::open(file_path).map_err(|e| {
                 format!("Failed to open test-chain file {:?}", e)

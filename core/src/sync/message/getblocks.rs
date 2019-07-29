@@ -4,33 +4,67 @@
 
 use crate::sync::{
     message::{
-        GetBlocksResponse, GetBlocksWithPublicResponse, Message, MsgId,
-        Request, RequestContext, RequestId,
+        Context, GetBlocksResponse, GetBlocksWithPublicResponse, Handleable,
+        Key, KeyContainer, Message, MsgId, RequestId,
     },
+    request_manager::Request,
     synchronization_protocol_handler::MAX_PACKET_SIZE,
-    Error, ErrorKind,
+    Error, ErrorKind, ProtocolConfiguration,
 };
 use cfx_types::H256;
 use primitives::Block;
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
-use std::ops::{Deref, DerefMut};
+use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct GetBlocks {
     pub request_id: RequestId,
     pub with_public: bool,
     pub hashes: Vec<H256>,
 }
 
+impl Request for GetBlocks {
+    fn set_request_id(&mut self, request_id: u64) {
+        self.request_id.set_request_id(request_id);
+    }
+
+    fn as_message(&self) -> &Message { self }
+
+    fn as_any(&self) -> &Any { self }
+
+    fn timeout(&self, conf: &ProtocolConfiguration) -> Duration {
+        conf.blocks_request_timeout
+    }
+
+    fn on_removed(&self, inflight_keys: &mut KeyContainer) {
+        let msg_type = self.msg_id().into();
+        for hash in self.hashes.iter() {
+            inflight_keys.remove(msg_type, Key::Hash(*hash));
+        }
+    }
+
+    fn with_inflight(&mut self, inflight_keys: &mut KeyContainer) {
+        let msg_type = self.msg_id().into();
+        self.hashes
+            .retain(|h| inflight_keys.add(msg_type, Key::Hash(*h)));
+    }
+
+    fn is_empty(&self) -> bool { self.hashes.is_empty() }
+
+    fn resend(&self) -> Option<Box<Request>> { Some(Box::new(self.clone())) }
+}
+
 impl GetBlocks {
-    fn get_blocks(
-        &self, context: &RequestContext, with_public: bool,
-    ) -> Vec<Block> {
+    fn get_blocks(&self, ctx: &Context, with_public: bool) -> Vec<Block> {
         let mut blocks = Vec::new();
         let mut packet_size_left = MAX_PACKET_SIZE;
 
         for hash in self.hashes.iter() {
-            if let Some(block) = context.graph.block_by_hash(hash) {
+            if let Some(block) = ctx.manager.graph.block_by_hash(hash) {
                 let block_size = if with_public {
                     block.approximated_rlp_size_with_public()
                 } else {
@@ -50,14 +84,14 @@ impl GetBlocks {
     }
 
     fn send_response_with_public(
-        &self, context: &RequestContext, blocks: Vec<Block>,
+        &self, ctx: &Context, blocks: Vec<Block>,
     ) -> Result<(), Error> {
         let mut response = GetBlocksWithPublicResponse {
             request_id: self.request_id.clone(),
             blocks,
         };
 
-        while let Err(e) = context.send_response(&response) {
+        while let Err(e) = ctx.send_response(&response) {
             if GetBlocks::is_oversize_packet_err(&e) {
                 let block_count = response.blocks.len() / 2;
                 response.blocks.truncate(block_count);
@@ -80,14 +114,14 @@ impl GetBlocks {
     }
 
     fn send_response(
-        &self, context: &RequestContext, blocks: Vec<Block>,
+        &self, ctx: &Context, blocks: Vec<Block>,
     ) -> Result<(), Error> {
         let mut response = GetBlocksResponse {
             request_id: self.request_id.clone(),
             blocks,
         };
 
-        while let Err(e) = context.send_response(&response) {
+        while let Err(e) = ctx.send_response(&response) {
             if GetBlocks::is_oversize_packet_err(&e) {
                 let block_count = response.blocks.len() / 2;
                 response.blocks.truncate(block_count);
@@ -100,23 +134,25 @@ impl GetBlocks {
     }
 }
 
-impl Request for GetBlocks {
-    fn handle(&self, context: &RequestContext) -> Result<(), Error> {
+impl Handleable for GetBlocks {
+    fn handle(self, ctx: &Context) -> Result<(), Error> {
         if self.hashes.is_empty() {
             return Ok(());
         }
 
-        let blocks = self.get_blocks(context, self.with_public);
+        let blocks = self.get_blocks(ctx, self.with_public);
         if self.with_public {
-            self.send_response_with_public(context, blocks)
+            self.send_response_with_public(ctx, blocks)
         } else {
-            self.send_response(context, blocks)
+            self.send_response(ctx, blocks)
         }
     }
 }
 
 impl Message for GetBlocks {
     fn msg_id(&self) -> MsgId { MsgId::GET_BLOCKS }
+
+    fn msg_name(&self) -> &'static str { "GetBlocks" }
 }
 
 impl Deref for GetBlocks {

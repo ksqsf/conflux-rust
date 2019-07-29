@@ -8,16 +8,17 @@ mod blocks;
 mod blocktxn;
 mod cmpctblocks;
 mod getblockhashesbyepoch;
-mod getblockheaderchain;
 mod getblockheaders;
 mod getblocks;
 mod getblocktxn;
 mod getcmpctblocks;
 mod getterminalblockhashes;
+mod handleable;
+mod keys;
 mod message;
+mod metrics;
 mod newblock;
 mod newblockhashes;
-mod request;
 mod status;
 mod terminalblockhashes;
 mod transactions;
@@ -29,20 +30,20 @@ pub use self::{
     blocktxn::GetBlockTxnResponse,
     cmpctblocks::GetCompactBlocksResponse,
     getblockhashesbyepoch::GetBlockHashesByEpoch,
-    getblockheaderchain::GetBlockHeaderChain,
     getblockheaders::GetBlockHeaders,
     getblocks::GetBlocks,
     getblocktxn::GetBlockTxn,
     getcmpctblocks::GetCompactBlocks,
     getterminalblockhashes::GetTerminalBlockHashes,
+    handleable::{Context, Handleable},
+    keys::{Key, KeyContainer},
     message::{Message, MsgId, RequestId},
     newblock::NewBlock,
     newblockhashes::NewBlockHashes,
-    request::{Request, RequestContext},
     status::Status,
     terminalblockhashes::GetTerminalBlockHashesResponse,
     transactions::{
         GetTransactions, GetTransactionsResponse, TransIndex,
-        TransactionDigests, TransactionPropagationControl, Transactions,
+        TransactionDigests, TransactionPropagationControl,
     },
 };

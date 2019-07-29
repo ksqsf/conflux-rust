@@ -4,17 +4,22 @@
 
 use crate::sync::{
     message::{
-        GetCompactBlocksResponse, Message, MsgId, Request, RequestContext,
-        RequestId,
+        Context, GetBlocks, GetCompactBlocksResponse, Handleable, Key,
+        KeyContainer, Message, MsgId, RequestId,
     },
+    request_manager::Request,
     synchronization_protocol_handler::{
         MAX_BLOCKS_TO_SEND, MAX_HEADERS_TO_SEND,
     },
-    Error,
+    Error, ProtocolConfiguration,
 };
 use cfx_types::H256;
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
-use std::ops::{Deref, DerefMut};
+use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 #[derive(Debug, PartialEq, Default)]
 pub struct GetCompactBlocks {
@@ -23,18 +28,55 @@ pub struct GetCompactBlocks {
 }
 
 impl Request for GetCompactBlocks {
-    fn handle(&self, context: &RequestContext) -> Result<(), Error> {
+    fn set_request_id(&mut self, request_id: u64) {
+        self.request_id.set_request_id(request_id);
+    }
+
+    fn as_message(&self) -> &Message { self }
+
+    fn as_any(&self) -> &Any { self }
+
+    fn timeout(&self, conf: &ProtocolConfiguration) -> Duration {
+        conf.blocks_request_timeout
+    }
+
+    fn on_removed(&self, inflight_keys: &mut KeyContainer) {
+        let msg_type = MsgId::GET_BLOCKS.into();
+        for hash in self.hashes.iter() {
+            inflight_keys.remove(msg_type, Key::Hash(*hash));
+        }
+    }
+
+    fn with_inflight(&mut self, inflight_keys: &mut KeyContainer) {
+        let msg_type = MsgId::GET_BLOCKS.into();
+        self.hashes
+            .retain(|h| inflight_keys.add(msg_type, Key::Hash(*h)));
+    }
+
+    fn is_empty(&self) -> bool { self.hashes.is_empty() }
+
+    fn resend(&self) -> Option<Box<Request>> {
+        Some(Box::new(GetBlocks {
+            request_id: 0.into(),
+            with_public: true,
+            hashes: self.hashes.iter().cloned().collect(),
+        }))
+    }
+}
+
+impl Handleable for GetCompactBlocks {
+    fn handle(self, ctx: &Context) -> Result<(), Error> {
         let mut compact_blocks = Vec::with_capacity(self.hashes.len());
         let mut blocks = Vec::new();
 
         for hash in self.hashes.iter() {
             if let Some(compact_block) =
-                context.graph.data_man.compact_block_by_hash(hash)
+                ctx.manager.graph.data_man.compact_block_by_hash(hash)
             {
                 if (compact_blocks.len() as u64) < MAX_HEADERS_TO_SEND {
                     compact_blocks.push(compact_block);
                 }
-            } else if let Some(block) = context.graph.block_by_hash(hash) {
+            } else if let Some(block) = ctx.manager.graph.block_by_hash(hash) {
                 debug!("Have complete block but no compact block, return complete block instead");
                 if (blocks.len() as u64) < MAX_BLOCKS_TO_SEND {
                     blocks.push(block.as_ref().clone());
@@ -42,7 +84,7 @@ impl Request for GetCompactBlocks {
             } else {
                 warn!(
                     "Peer {} requested non-existent compact block {}",
-                    context.peer, hash
+                    ctx.peer, hash
                 );
             }
         }
@@ -53,12 +95,14 @@ impl Request for GetCompactBlocks {
             blocks,
         };
 
-        context.send_response(&response)
+        ctx.send_response(&response)
     }
 }
 
 impl Message for GetCompactBlocks {
     fn msg_id(&self) -> MsgId { MsgId::GET_CMPCT_BLOCKS }
+
+    fn msg_name(&self) -> &'static str { "GetCompactBlocks" }
 }
 
 impl Deref for GetCompactBlocks {

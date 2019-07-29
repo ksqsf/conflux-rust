@@ -3,10 +3,10 @@
 // See http://www.gnu.org/licenses/
 
 use crate::sync::{
-    message::{Message, MsgId, Request, RequestContext},
-    request_manager::Request as RequestMessage,
+    message::{Context, Handleable, KeyContainer, Message, MsgId},
+    request_manager::Request,
     state::snapshot_manifest_response::SnapshotManifestResponse,
-    Error,
+    Error, ProtocolConfiguration,
 };
 use cfx_types::H256;
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
@@ -27,8 +27,8 @@ impl SnapshotManifestRequest {
     }
 }
 
-impl Request for SnapshotManifestRequest {
-    fn handle(&self, context: &RequestContext) -> Result<(), Error> {
+impl Handleable for SnapshotManifestRequest {
+    fn handle(self, ctx: &Context) -> Result<(), Error> {
         // todo find manifest from storage APIs
         let response = SnapshotManifestResponse {
             request_id: self.request_id,
@@ -37,11 +37,11 @@ impl Request for SnapshotManifestRequest {
             chunk_hashes: Vec::new(),
         };
 
-        context.send_response(&response)
+        ctx.send_response(&response)
     }
 }
 
-impl RequestMessage for SnapshotManifestRequest {
+impl Request for SnapshotManifestRequest {
     fn set_request_id(&mut self, request_id: u64) {
         self.request_id = request_id;
     }
@@ -50,18 +50,23 @@ impl RequestMessage for SnapshotManifestRequest {
 
     fn as_any(&self) -> &Any { self }
 
-    // todo configurable
-    fn timeout(&self) -> Duration { Duration::from_secs(30) }
-
-    fn on_removed(&self) {}
-
-    fn preprocess(&self) -> Box<RequestMessage> {
-        Box::new(SnapshotManifestRequest::new(self.checkpoint.clone()))
+    fn timeout(&self, conf: &ProtocolConfiguration) -> Duration {
+        conf.headers_request_timeout
     }
+
+    fn on_removed(&self, _inflight_keys: &mut KeyContainer) {}
+
+    fn with_inflight(&mut self, _inflight_keys: &mut KeyContainer) {}
+
+    fn is_empty(&self) -> bool { false }
+
+    fn resend(&self) -> Option<Box<Request>> { Some(Box::new(self.clone())) }
 }
 
 impl Message for SnapshotManifestRequest {
     fn msg_id(&self) -> MsgId { MsgId::GET_SNAPSHOT_MANIFEST }
+
+    fn msg_name(&self) -> &'static str { "SnapshotManifestRequest" }
 }
 
 impl Encodable for SnapshotManifestRequest {

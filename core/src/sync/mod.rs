@@ -10,6 +10,7 @@ mod state;
 pub mod tests;
 
 mod synchronization_graph;
+mod synchronization_phases;
 mod synchronization_protocol_handler;
 mod synchronization_service;
 mod synchronization_state;
@@ -21,9 +22,16 @@ pub use self::{
         SharedSynchronizationGraph, SyncGraphStatistics, SynchronizationGraph,
         SynchronizationGraphInner, SynchronizationGraphNode,
     },
+    synchronization_phases::{
+        CatchUpCheckpointPhase, CatchUpRecoverBlockFromDbPhase,
+        CatchUpRecoverBlockHeaderFromDbPhase, CatchUpSyncBlockHeaderPhase,
+        CatchUpSyncBlockPhase, NormalSyncPhase, SyncPhaseType,
+        SynchronizationPhaseManager, SynchronizationPhaseTrait,
+    },
     synchronization_protocol_handler::{
         LocalMessageTask, ProtocolConfiguration, SyncHandlerWorkType,
-        SynchronizationProtocolHandler, SYNCHRONIZATION_PROTOCOL_VERSION,
+        SynchronizationProtocolHandler, CATCH_UP_EPOCH_LAG_THRESHOLD,
+        SYNCHRONIZATION_PROTOCOL_VERSION,
     },
     synchronization_service::{
         SharedSynchronizationService, SynchronizationService,
@@ -228,10 +236,6 @@ pub mod msg_sender {
                 "network_connection_data_counter",
                 "get_terminal_block_hashes_counter"
             );
-        static ref TRANSACTIONS_METER: Arc<Meter> = register_meter_with_group(
-            "network_connection_data",
-            "transactions"
-        );
         static ref TRANSACTIONS_COUNTER: Arc<Meter> = register_meter_with_group(
             "network_connection_data_counter",
             "transactions_counter"
@@ -342,10 +346,6 @@ pub mod msg_sender {
                     GET_TERMINAL_BLOCK_HASHES_METER.mark(size);
                     GET_TERMINAL_BLOCK_HASHES_COUNTER.mark(1);
                 }
-                MsgId::TRANSACTIONS => {
-                    TRANSACTIONS_METER.mark(size);
-                    TRANSACTIONS_COUNTER.mark(1);
-                }
                 MsgId::GET_CMPCT_BLOCKS => {
                     GET_CMPCT_BLOCKS_METER.mark(size);
                     GET_CMPCT_BLOCKS_COUNTER.mark(1);
@@ -394,7 +394,7 @@ pub mod msg_sender {
 
             debug!(
                 "Send message({}) to {:?}",
-                msg.msg_id(),
+                msg.msg_name(),
                 io.get_peer_node_id(peer)
             );
         }

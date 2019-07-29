@@ -4,15 +4,20 @@
 
 use crate::sync::{
     message::{
-        request::{Request, RequestContext},
-        GetBlockHeadersResponse, Message, MsgId, RequestId,
+        Context, GetBlockHeadersResponse, Handleable, Key, KeyContainer,
+        Message, MsgId, RequestId,
     },
+    request_manager::Request,
     synchronization_protocol_handler::MAX_HEADERS_TO_SEND,
-    Error,
+    Error, ProtocolConfiguration,
 };
 use cfx_types::H256;
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
-use std::ops::{Deref, DerefMut};
+use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct GetBlockHeaders {
@@ -21,7 +26,38 @@ pub struct GetBlockHeaders {
 }
 
 impl Request for GetBlockHeaders {
-    fn handle(&self, context: &RequestContext) -> Result<(), Error> {
+    fn set_request_id(&mut self, request_id: u64) {
+        self.request_id.set_request_id(request_id);
+    }
+
+    fn as_message(&self) -> &Message { self }
+
+    fn as_any(&self) -> &Any { self }
+
+    fn timeout(&self, conf: &ProtocolConfiguration) -> Duration {
+        conf.headers_request_timeout
+    }
+
+    fn on_removed(&self, inflight_keys: &mut KeyContainer) {
+        let msg_type = self.msg_id().into();
+        for hash in self.hashes.iter() {
+            inflight_keys.remove(msg_type, Key::Hash(*hash));
+        }
+    }
+
+    fn with_inflight(&mut self, inflight_keys: &mut KeyContainer) {
+        let msg_type = self.msg_id().into();
+        self.hashes
+            .retain(|h| inflight_keys.add(msg_type, Key::Hash(*h)));
+    }
+
+    fn is_empty(&self) -> bool { self.hashes.is_empty() }
+
+    fn resend(&self) -> Option<Box<Request>> { Some(Box::new(self.clone())) }
+}
+
+impl Handleable for GetBlockHeaders {
+    fn handle(self, ctx: &Context) -> Result<(), Error> {
         if self.hashes.is_empty() {
             return Ok(());
         }
@@ -30,25 +66,27 @@ impl Request for GetBlockHeaders {
             .hashes
             .iter()
             .take(MAX_HEADERS_TO_SEND as usize)
-            .filter_map(|hash| context.graph.block_header_by_hash(&hash))
+            .filter_map(|hash| ctx.manager.graph.block_header_by_hash(&hash))
             .collect();
 
         let mut block_headers_resp = GetBlockHeadersResponse::default();
-        block_headers_resp.set_request_id(self.request_id.request_id());
+        block_headers_resp.set_request_id(self.request_id());
         block_headers_resp.headers = headers;
 
         debug!(
             "Returned {:?} block headers to peer {:?}",
             block_headers_resp.headers.len(),
-            context.peer,
+            ctx.peer,
         );
 
-        context.send_response(&block_headers_resp)
+        ctx.send_response(&block_headers_resp)
     }
 }
 
 impl Message for GetBlockHeaders {
     fn msg_id(&self) -> MsgId { MsgId::GET_BLOCK_HEADERS }
+
+    fn msg_name(&self) -> &'static str { "GetBlockHeaders" }
 }
 
 impl Deref for GetBlockHeaders {
