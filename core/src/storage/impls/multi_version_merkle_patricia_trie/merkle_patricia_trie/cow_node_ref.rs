@@ -149,14 +149,16 @@ impl CowNodeRef {
         if self.owned {
             Ok(None)
         } else {
-//            let original_db_key = match self.node_ref {
-//                NodeRefDeltaMpt::Committed { db_key } => Some(db_key),
-//                NodeRefDeltaMpt::Dirty { .. } => self.node_ref.original_db_key(),
-//            };
+            let original_db_key = match self.node_ref {
+                NodeRefDeltaMpt::Committed { db_key } => Some(db_key),
+                NodeRefDeltaMpt::Dirty { .. } => {
+                    self.node_ref.original_db_key()
+                }
+            };
             // Similar to Self::new_uninitialized_node().
             let (node_ref, new_entry) = NodeMemoryManagerDeltaMpt::new_node(
                 &allocator,
-                None, // FIXME(mk) Use a dbkey here will fool something into thinking two keys are different? leading to panic (Drop for CowNodeRef)
+                original_db_key,
             )?;
             owned_node_set.insert(node_ref.clone());
             self.node_ref = node_ref;
@@ -799,7 +801,7 @@ use super::{
     super::{
         super::{
             errors::*,
-            state::OwnedNodeSet,
+            owned_node_set::OwnedNodeSet,
             state_manager::{AtomicCommitTransaction, COL_DELTA_TRIE},
         },
         guarded_value::GuardedValue,

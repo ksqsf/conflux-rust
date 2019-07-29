@@ -15,12 +15,12 @@ use rlp::*;
 /// space than NodeRef.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct NodeRefDeltaMptCompact {
-    value: u32,
+    value: u64,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct MaybeNodeRefDeltaMptCompact {
-    value: u32,
+    value: u64,
 }
 
 impl Default for MaybeNodeRefDeltaMptCompact {
@@ -30,10 +30,10 @@ impl Default for MaybeNodeRefDeltaMptCompact {
 impl NodeRefDeltaMptCompact {
     /// Valid dirty slot ranges from [0..DIRTY_SLOT_LIMIT).
     /// The DIRTY_SLOT_LIMIT is reserved for MaybeNodeRefDeltaMptCompact#NULL.
-    pub const DIRTY_SLOT_LIMIT: u32 = 0x7fffffff;
-    const PERSISTENT_KEY_BIT: u32 = 0x80000000;
+    pub const DIRTY_SLOT_LIMIT: u64 = 0x7fffffffffffffff;
+    const PERSISTENT_KEY_BIT: u64 = 0x8000000000000000;
 
-    pub fn new(value: u32) -> Self { Self { value } }
+    pub fn new(value: u64) -> Self { Self { value } }
 
     pub fn is_dirty(&self) -> bool { !self.is_committed() }
 
@@ -43,11 +43,11 @@ impl NodeRefDeltaMptCompact {
 }
 
 impl MaybeNodeRefDeltaMptCompact {
-    const NULL: u32 = 0;
+    const NULL: u64 = 0;
     pub const NULL_NODE: MaybeNodeRefDeltaMptCompact =
         MaybeNodeRefDeltaMptCompact { value: Self::NULL };
 
-    pub fn new(value: u32) -> Self { Self { value } }
+    pub fn new(value: u64) -> Self { Self { value } }
 
     pub fn is_none(&self) -> bool { *self == Self::NULL_NODE }
 
@@ -74,7 +74,8 @@ pub enum NodeRefDeltaMpt {
 }
 
 impl NodeRefDeltaMpt {
-    /// Returns the db key to the original node (old version found in the database). Returns None if this node ref is clean (Committed).
+    /// Returns the db key to the original node (old version found in the
+    /// database). Returns None if this node ref is clean (Committed).
     pub fn original_db_key(&self) -> Option<DeltaMptDbKey> {
         match self {
             NodeRefDeltaMpt::Committed { .. } => None,
@@ -97,12 +98,25 @@ impl NodeRefDeltaMpt {
 
 impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact {
     fn from(node: NodeRefDeltaMpt) -> Self {
+        fn from_maybe_u32(x: Option<u32>) -> u32 {
+            match x {
+                Some(x) => x,
+                None => 0xffffffff,
+            }
+        }
+
         match node {
             NodeRefDeltaMpt::Committed { db_key } => Self {
-                value: db_key ^ NodeRefDeltaMptCompact::PERSISTENT_KEY_BIT,
+                value: ((db_key as u64) << 32)
+                    ^ NodeRefDeltaMptCompact::PERSISTENT_KEY_BIT,
             },
-            NodeRefDeltaMpt::Dirty { index, .. } => Self {
-                value: index ^ NodeRefDeltaMptCompact::DIRTY_SLOT_LIMIT,
+            NodeRefDeltaMpt::Dirty {
+                index,
+                original_db_key,
+            } => Self {
+                value: ((index as u64) << 32
+                    | from_maybe_u32(original_db_key) as u64)
+                    ^ NodeRefDeltaMptCompact::DIRTY_SLOT_LIMIT,
             },
         }
     }
@@ -110,14 +124,26 @@ impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact {
 
 impl From<NodeRefDeltaMptCompact> for NodeRefDeltaMpt {
     fn from(x: NodeRefDeltaMptCompact) -> Self {
+        fn to_maybe_u32(x: u32) -> Option<u32> {
+            if x == 0xffffffff {
+                None
+            } else {
+                Some(x)
+            }
+        }
+
         if x.is_dirty() {
             NodeRefDeltaMpt::Dirty {
-                index: (NodeRefDeltaMptCompact::DIRTY_SLOT_LIMIT ^ x.value),
-                original_db_key: None,
+                index: ((NodeRefDeltaMptCompact::DIRTY_SLOT_LIMIT ^ x.value)
+                    >> 32) as u32,
+                original_db_key: to_maybe_u32(
+                    (NodeRefDeltaMptCompact::DIRTY_SLOT_LIMIT ^ x.value) as u32,
+                ),
             }
         } else {
             NodeRefDeltaMpt::Committed {
-                db_key: (NodeRefDeltaMptCompact::PERSISTENT_KEY_BIT ^ x.value),
+                db_key: ((NodeRefDeltaMptCompact::PERSISTENT_KEY_BIT ^ x.value)
+                    >> 32) as u32,
             }
         }
     }

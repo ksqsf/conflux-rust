@@ -2,8 +2,6 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-pub type OwnedNodeSet = BTreeSet<NodeRefDeltaMpt>;
-
 pub struct State<'a> {
     manager: &'a StateManager,
     snapshot_db: Arc<SnapshotDb>,
@@ -412,6 +410,7 @@ use super::{
     },
     errors::*,
     multi_version_merkle_patricia_trie::{merkle_patricia_trie::*, DeltaMpt},
+    owned_node_set::*,
     state_manager::*,
 };
 use crate::statedb::KeyPadding;
@@ -420,7 +419,6 @@ use primitives::{
 };
 use std::{
     cell::UnsafeCell,
-    collections::BTreeSet,
     hint::unreachable_unchecked,
     sync::{atomic::Ordering, Arc},
 };
