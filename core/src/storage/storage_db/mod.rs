@@ -1,5 +1,6 @@
 pub mod delta_db;
 pub mod delta_db_manager;
+pub mod merkle_db;
 pub mod snapshot_db;
 pub mod snapshot_db_manager;
 

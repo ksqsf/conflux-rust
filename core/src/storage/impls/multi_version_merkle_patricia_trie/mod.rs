@@ -5,7 +5,7 @@
 pub mod cache;
 pub(in super::super) mod merkle_patricia_trie;
 pub(in super::super) mod node_memory_manager;
-pub(in super::super) mod return_after_use;
+pub(super) mod return_after_use;
 pub(super) mod row_number;
 
 pub use self::node_ref_map::DEFAULT_NODE_MAP_SIZE;
@@ -133,10 +133,12 @@ impl MultiVersionMerklePatriciaTrie {
 }
 
 pub mod guarded_value;
-pub(self) mod node_ref_map;
+pub mod node_ref_map;
 /// Fork of upstream slab in order to compact data and to provide internal
 /// mutability.
 mod slab;
+
+pub use merkle_patricia_trie::trie_proof::TrieProof;
 
 use self::{
     cache::algorithm::lru::LRU, merkle_patricia_trie::*,

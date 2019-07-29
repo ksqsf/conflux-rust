@@ -2,8 +2,6 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-pub type OwnedNodeSet = BTreeSet<NodeRefDeltaMpt>;
-
 pub struct State<'a> {
     manager: &'a StateManager,
     snapshot_db: Arc<SnapshotDb>,
@@ -12,6 +10,7 @@ pub struct State<'a> {
     delta_trie: Arc<DeltaMpt>,
     delta_trie_root: Option<NodeRefDeltaMpt>,
     owned_node_set: Option<OwnedNodeSet>,
+    children_merkle_map: ChildrenMerkleMap,
     dirty: bool,
 }
 
@@ -25,24 +24,44 @@ impl<'a> State<'a> {
             delta_trie: state_trees.3,
             delta_trie_root: state_trees.4,
             owned_node_set: Some(Default::default()),
+            children_merkle_map: Default::default(),
             dirty: false,
         }
     }
 
-    pub fn get_from_delta(
+    fn get_from_delta(
         &self, mpt: &'a DeltaMpt, maybe_root_node: Option<NodeRefDeltaMpt>,
-        access_key: &[u8],
-    ) -> Result<Option<Box<[u8]>>>
+        access_key: &[u8], with_proof: bool,
+    ) -> Result<(Option<Box<[u8]>>, Option<TrieProof>)>
     {
         // Get won't create any new nodes so it's fine to pass an empty
         // owned_node_set.
         let mut empty_owned_node_set: Option<OwnedNodeSet> =
             Some(Default::default());
+
         match maybe_root_node {
-            None => Ok(None),
+            None => Ok((None, None)),
             Some(root_node) => {
-                SubTrieVisitor::new(mpt, root_node, &mut empty_owned_node_set)
-                    .get(access_key)
+                let maybe_value = SubTrieVisitor::new(
+                    mpt,
+                    root_node.clone(),
+                    &mut empty_owned_node_set,
+                )
+                .get(access_key)?;
+
+                let maybe_proof = match with_proof {
+                    false => None,
+                    true => Some(
+                        SubTrieVisitor::new(
+                            mpt,
+                            root_node,
+                            &mut empty_owned_node_set,
+                        )
+                        .get_proof(access_key)?,
+                    ),
+                };
+
+                Ok((maybe_value, maybe_proof))
             }
         }
     }
@@ -51,6 +70,52 @@ impl<'a> State<'a> {
         &self, access_key: &[u8],
     ) -> Result<Option<Box<[u8]>>> {
         SnapshotDbTrait::get(&*self.snapshot_db, access_key)
+    }
+
+    fn get_from_all_tries(
+        &self, access_key: &[u8], with_proof: bool,
+    ) -> Result<(Option<Box<[u8]>>, StateProof)> {
+        let (maybe_value, maybe_delta_proof) = self.get_from_delta(
+            &self.delta_trie,
+            self.delta_trie_root.clone(),
+            access_key,
+            with_proof,
+        )?;
+
+        if maybe_value.is_some() {
+            let proof = StateProof::default().with_delta(maybe_delta_proof);
+            return Ok((maybe_value, proof));
+        }
+
+        let maybe_intermediate_proof = match self.intermediate_trie {
+            None => None,
+            Some(_) => {
+                let (maybe_value, maybe_proof) = self.get_from_delta(
+                    self.intermediate_trie.as_ref().unwrap(),
+                    self.intermediate_trie_root.clone(),
+                    access_key,
+                    with_proof,
+                )?;
+
+                if maybe_value.is_some() {
+                    let proof = StateProof::default()
+                        .with_delta(maybe_delta_proof)
+                        .with_intermediate(maybe_proof);
+                    return Ok((maybe_value, proof));
+                }
+
+                maybe_proof
+            }
+        };
+
+        // TODO: get from snapshot
+        // self.get_from_snapshot(access_key)
+
+        let proof = StateProof::default()
+            .with_delta(maybe_delta_proof)
+            .with_intermediate(maybe_intermediate_proof);
+
+        Ok((None, proof))
     }
 }
 
@@ -84,33 +149,14 @@ impl<'a> StateTrait for State<'a> {
     }
 
     fn get(&self, access_key: &[u8]) -> Result<Option<Box<[u8]>>> {
-        let maybe_delta_value = self.get_from_delta(
-            &self.delta_trie,
-            self.delta_trie_root.clone(),
-            access_key,
-        );
-        if maybe_delta_value.is_err()
-            || maybe_delta_value.as_ref().unwrap().is_some()
-        {
-            return maybe_delta_value;
-        }
-        match self.intermediate_trie {
-            None => {}
-            Some(_) => {
-                let maybe_delta_value = self.get_from_delta(
-                    self.intermediate_trie.as_ref().unwrap(),
-                    self.intermediate_trie_root.clone(),
-                    access_key,
-                );
-                if maybe_delta_value.is_err()
-                    || maybe_delta_value.as_ref().unwrap().is_some()
-                {
-                    return maybe_delta_value;
-                }
-            }
-        }
-        //let maybe_intermediate_value = self.get_from_delta();
-        self.get_from_snapshot(access_key)
+        self.get_from_all_tries(access_key, false)
+            .map(|(value, _)| value)
+    }
+
+    fn get_with_proof(
+        &self, access_key: &[u8],
+    ) -> Result<(Option<Box<[u8]>>, StateProof)> {
+        self.get_from_all_tries(access_key, true)
     }
 
     // FIXME: re-implement all other methods.
@@ -271,6 +317,7 @@ impl<'a> State<'a> {
                 let merkle = cow_root.get_or_compute_merkle(
                     &self.delta_trie,
                     self.owned_node_set.as_mut().unwrap(),
+                    &mut self.children_merkle_map,
                     &allocator,
                 )?;
                 cow_root.into_child();
@@ -321,6 +368,7 @@ impl<'a> State<'a> {
                     let result = cow_root.commit_dirty_recursively(
                         &self.delta_trie,
                         self.owned_node_set.as_mut().unwrap(),
+                        &mut self.children_merkle_map,
                         trie_node_mut,
                         &mut commit_transaction,
                         &mut *self
@@ -351,7 +399,7 @@ impl<'a> State<'a> {
                 let db_key = *{
                     match self.delta_trie_root.as_ref().unwrap() {
                         // Dirty state are committed.
-                        NodeRefDeltaMpt::Dirty { index: _ } => unsafe {
+                        NodeRefDeltaMpt::Dirty { .. } => unsafe {
                             unreachable_unchecked();
                         },
                         // Empty block's state root points to its base state.
@@ -411,16 +459,22 @@ use super::{
         super::db::COL_DELTA_TRIE, state::*, state_manager::*, storage_db::*,
     },
     errors::*,
-    multi_version_merkle_patricia_trie::{merkle_patricia_trie::*, DeltaMpt},
+    multi_version_merkle_patricia_trie::{
+        merkle_patricia_trie::*, DeltaMpt, TrieProof,
+    },
+    owned_node_set::*,
     state_manager::*,
+    state_proof::StateProof,
 };
-use crate::statedb::KeyPadding;
+use crate::{
+    statedb::KeyPadding,
+    storage::impls::multi_version_merkle_patricia_trie::node_memory_manager::ChildrenMerkleMap,
+};
 use primitives::{
     EpochId, MerkleHash, StateRoot, StateRootWithAuxInfo, MERKLE_NULL_NODE,
 };
 use std::{
     cell::UnsafeCell,
-    collections::BTreeSet,
     hint::unreachable_unchecked,
     sync::{atomic::Ordering, Arc},
 };

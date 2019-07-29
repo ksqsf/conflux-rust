@@ -4,7 +4,7 @@
 
 lazy_static! {
     static ref NEW_CHILDREN_VALUE: NodeRefDeltaMptCompact =
-        NodeRefDeltaMptCompact::new(CHILDREN_COUNT as u32);
+        NodeRefDeltaMptCompact::new(CHILDREN_COUNT as u64);
 }
 
 fn default_children_value(index: u8) -> NodeRefDeltaMptCompact {
@@ -237,13 +237,13 @@ fn test_children_table_iteration_modification() {
     enumerate_and_test(|existence, children_list, mut children_table| {
         // iter_mut()
         for (i, children) in children_table.iter_mut() {
-            *children = NodeRefDeltaMptCompact::new(i as u32 * 3);
+            *children = NodeRefDeltaMptCompact::new(i as u64 * 3);
         }
 
         let mut list = Vec::with_capacity(CHILDREN_COUNT);
         for (i, children) in children_table.iter_mut() {
             list.push(i);
-            assert_eq!(NodeRefDeltaMptCompact::new(i as u32 * 3), *children);
+            assert_eq!(NodeRefDeltaMptCompact::new(i as u64 * 3), *children);
         }
         assert_eq!(children_list, list);
 
@@ -252,7 +252,7 @@ fn test_children_table_iteration_modification() {
             match maybe_children {
                 None => {}
                 Some(children) => {
-                    *children = NodeRefDeltaMptCompact::new(i as u32 * 5);
+                    *children = NodeRefDeltaMptCompact::new(i as u64 * 5);
                 }
             }
         }
@@ -263,7 +263,7 @@ fn test_children_table_iteration_modification() {
 
             if existence[next_index] {
                 assert_eq!(
-                    NodeRefDeltaMptCompact::new(i as u32 * 5),
+                    NodeRefDeltaMptCompact::new(i as u64 * 5),
                     *maybe_children.unwrap()
                 );
             } else {
