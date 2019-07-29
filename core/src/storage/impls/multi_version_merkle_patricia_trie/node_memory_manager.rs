@@ -22,7 +22,7 @@ pub type AllocatorRef<'a, CacheAlgoDataT> =
 pub type AllocatorRefRef<'a, CacheAlgoDataT> =
     &'a AllocatorRef<'a, CacheAlgoDataT>;
 
-pub type ChildrenMerkleMap = BTreeMap<ActualSlabIndex, ChildrenMerkleTable>;
+pub type ChildrenMerkleMap = BTreeMap<DeltaMptDbKey, ChildrenMerkleTable>;
 
 pub type RLFUPosT = u32;
 pub type CacheAlgorithmDeltaMpt = LRU<RLFUPosT, DeltaMptDbKey>;
@@ -300,11 +300,29 @@ impl<
         Ok(GuardedValue::new(cache_manager_locked, trie_cell_ref))
     }
 
-    pub fn load_children_merkles_from_db(
-        &self, db_key: DeltaMptDbKey,
-    ) -> Result<Option<[MerkleHash; CHILDREN_COUNT]>> {
-        self.db_load_counter.fetch_add(1, Ordering::Relaxed);
-        self.db.get_children_merkles(db_key.to_string().as_bytes())
+    /// Firstly look up in children merkle map, and query db if missed.
+    /// The result returned by db will be inserted into the children merkle map.
+    #[inline(always)]
+    pub fn load_children_merkles<'a>(
+        &'a self, db_key: DeltaMptDbKey,
+        children_merkle_map: &'a mut ChildrenMerkleMap,
+    ) -> Result<Option<&'a ChildrenMerkleTable>>
+    {
+        match children_merkle_map.entry(db_key) {
+            Entry::Vacant(entry) => {
+                self.db_load_counter.fetch_add(1, Ordering::Relaxed);
+                self.db
+                    .get_children_merkles(db_key.to_string().as_bytes())
+                    .map(|maybe_merkles| {
+                        maybe_merkles.map(|merkles| {
+                            entry.insert(merkles) as &'a ChildrenMerkleTable
+                        })
+                    })
+            }
+            Entry::Occupied(entry) => {
+                Ok(Some(entry.into_mut() as &'a ChildrenMerkleTable))
+            }
+        }
     }
 
     /// This method is currently unused but kept for future use and for the sake
@@ -823,7 +841,6 @@ use super::{
     slab::Slab,
 };
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard};
-use primitives::MerkleHash;
 use rlp::*;
 use std::{
     cell::UnsafeCell,
@@ -834,5 +851,6 @@ use std::{
         Arc,
     },
 };
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use crate::storage::impls::multi_version_merkle_patricia_trie::merkle_patricia_trie::merkle::ChildrenMerkleTable;

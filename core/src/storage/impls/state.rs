@@ -410,7 +410,7 @@ impl<'a> State<'a> {
 
 use super::{
     super::{
-        super::db::{COL_CHILDREN_MERKLES, COL_DELTA_TRIE},
+        super::db::COL_DELTA_TRIE,
         state::*,
         state_manager::*,
         storage_db::*,

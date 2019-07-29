@@ -415,9 +415,13 @@ impl CowNodeRef {
             }
         }
 
+        // TODO(mk) avoid memcpy when original_db_key is some.
         match &self.node_ref {
-            NodeRefDeltaMpt::Dirty { index, .. } => {
-                children_merkle_map.insert(*index, merkles.clone());
+            NodeRefDeltaMpt::Dirty {
+                original_db_key: Some(key),
+                ..
+            } => {
+                children_merkle_map.insert(*key, merkles.clone());
             }
             _ => {}
         }
@@ -449,7 +453,8 @@ impl CowNodeRef {
             (_, Some(db_key)) => {
                 let merkles = trie
                     .get_node_memory_manager()
-                    .load_children_merkles_from_db(db_key);
+                    .load_children_merkles(db_key, children_merkle_map)
+                    .map(|x| x.cloned());
 
                 match merkles {
                     Err(_) | Ok(None) => {
@@ -558,9 +563,11 @@ impl CowNodeRef {
     ) -> Option<&'a ChildrenMerkleTable> {
         match &self.node_ref {
             NodeRefDeltaMpt::Committed { .. } => unreachable_unchecked(),
-            NodeRefDeltaMpt::Dirty { index, .. } => {
-                children_merkle_map.get(index)
-            }
+            NodeRefDeltaMpt::Dirty {
+                original_db_key: Some(key),
+                ..
+            } => children_merkle_map.get(key),
+            _ => None,
         }
     }
 
@@ -592,6 +599,10 @@ impl CowNodeRef {
                 trie_node.rlp_bytes().as_slice(),
             );
 
+            // Commit children merkles, using the current DB key as the key for
+            // future lookups. Cached entries are evicted because
+            // they may interfere with db keys. (Note we used original_db_key as
+            // key in the children merkle map.)
             if let Some(merkles) = unsafe {
                 self.get_precomputed_children_merkles_unchecked(
                     children_merkle_map,
@@ -602,6 +613,13 @@ impl CowNodeRef {
                     commit_transaction.info.row_number.to_string().as_bytes(),
                     &rlp::encode_list(merkles).into_boxed_slice(),
                 );
+            }
+            if let NodeRefDeltaMpt::Dirty {
+                original_db_key: Some(key),
+                ..
+            } = &self.node_ref
+            {
+                children_merkle_map.remove(key);
             }
 
             commit_transaction.info.row_number =
