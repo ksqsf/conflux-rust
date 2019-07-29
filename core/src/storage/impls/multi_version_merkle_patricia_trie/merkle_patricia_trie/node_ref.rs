@@ -8,8 +8,13 @@ use super::super::{
 use rlp::*;
 
 /// The MSB is used to indicate if a node is in mem or on disk,
-/// the rest 31 bits specifies the index of the node in the
-/// memory region.
+/// the higher 31 bits after the MSB specifies the index of the node in the
+/// memory region, while the lower 32 bits indicate the original DB key, if the
+/// node is a dirty node in mem.
+///
+/// Although a NodeRefDeltaMptCompact is 64 bits long, the RLP encoding only
+/// considers its high 32 bits, because data on wire will only consist of DB
+/// keys.
 ///
 /// It's necessary to use MaybeNodeRef in ChildrenTable because it consumes less
 /// space than NodeRef.
@@ -101,7 +106,7 @@ impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact {
         fn from_maybe_u32(x: Option<u32>) -> u32 {
             match x {
                 Some(x) => x,
-                None => 0xffffffff,
+                None => 0xffff_ffff,
             }
         }
 
@@ -125,7 +130,7 @@ impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact {
 impl From<NodeRefDeltaMptCompact> for NodeRefDeltaMpt {
     fn from(x: NodeRefDeltaMptCompact) -> Self {
         fn to_maybe_u32(x: u32) -> Option<u32> {
-            if x == 0xffffffff {
+            if x == 0xffff_ffff {
                 None
             } else {
                 Some(x)
@@ -170,14 +175,22 @@ impl From<Option<NodeRefDeltaMpt>> for MaybeNodeRefDeltaMptCompact {
     }
 }
 
+/// We only read 32 bits, see Encodable for NodeRefDeltaMptCompact.
 impl Decodable for NodeRefDeltaMptCompact {
     fn decode(rlp: &Rlp) -> ::std::result::Result<Self, DecoderError> {
+        let val: u32 = rlp.as_val()?;
+        // lower bits being zero indicates that the original db key is none.
+        // Cf. impl From<NodeRefDeltaMpt> for NodeRefDeltaMptCompact.
         Ok(NodeRefDeltaMptCompact {
-            value: rlp.as_val()?,
+            value: (val as u64) << 32,
         })
     }
 }
 
+/// We only encode the higher 32 bits, because everything on wire will only be
+/// DB keys.
 impl Encodable for NodeRefDeltaMptCompact {
-    fn rlp_append(&self, s: &mut RlpStream) { s.append_internal(&self.value); }
+    fn rlp_append(&self, s: &mut RlpStream) {
+        s.append_internal(&((self.value >> 32) as u32));
+    }
 }
