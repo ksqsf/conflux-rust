@@ -456,16 +456,13 @@ impl<'a> State<'a> {
 
 use super::{
     super::{
-        super::db::COL_DELTA_TRIE,
-        state::*,
-        state_manager::*,
-        storage_db::*,
+        super::db::COL_DELTA_TRIE, state::*, state_manager::*, storage_db::*,
     },
     errors::*,
-    owned_node_set::*,
     multi_version_merkle_patricia_trie::{
         merkle_patricia_trie::*, DeltaMpt, TrieProof,
     },
+    owned_node_set::*,
     state_manager::*,
     state_proof::StateProof,
 };
