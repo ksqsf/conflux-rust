@@ -31,7 +31,7 @@ impl SnapshotDbTrait for KvdbSqlite {
 }
 
 impl MerkleDbTrait for KvdbSqlite {
-    fn get_children_merkles_data(
+    fn get_children_merkles_raw_data(
         &self, _key: &[u8],
     ) -> Result<Option<Box<[u8]>>> {
         unimplemented!()

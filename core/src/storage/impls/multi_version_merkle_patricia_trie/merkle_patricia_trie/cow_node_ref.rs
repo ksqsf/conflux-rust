@@ -342,6 +342,7 @@ impl CowNodeRef {
     /// Get if unowned, compute if owned.
     pub fn get_or_compute_merkle(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
+        children_merkle_map: &mut ChildrenMerkleMap,
         allocator_ref: AllocatorRefRefDeltaMpt,
     ) -> Result<MerkleHash>
     {
@@ -355,8 +356,9 @@ impl CowNodeRef {
 
             let children_merkles = self.get_or_compute_children_merkles(
                 trie,
-                owned_node_set,
                 trie_node,
+                owned_node_set,
+                children_merkle_map,
                 allocator_ref,
             )?;
 
@@ -383,8 +385,9 @@ impl CowNodeRef {
     }
 
     fn compute_children_merkles(
-        &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
-        trie_node: &mut TrieNodeDeltaMpt,
+        &mut self, trie: &DeltaMpt, trie_node: &mut TrieNodeDeltaMpt,
+        owned_node_set: &mut OwnedNodeSet,
+        children_merkle_map: &mut ChildrenMerkleMap,
         allocator_ref: AllocatorRefRefDeltaMpt,
     ) -> Result<MaybeMerkleTable>
     {
@@ -398,6 +401,7 @@ impl CowNodeRef {
                     let result = cow_child_node.get_or_compute_merkle(
                         trie,
                         owned_node_set,
+                        children_merkle_map,
                         allocator_ref,
                     );
                     // There is no change to the child reference so the
@@ -408,12 +412,21 @@ impl CowNodeRef {
                 }
             }
         }
+
+        match &self.node_ref {
+            NodeRefDeltaMpt::Dirty { original_db_key: Some(key), .. } => {
+                children_merkle_map.insert(*key, merkles.clone());
+            }
+            _ => {}
+        }
+
         Ok(Some(merkles))
     }
 
     fn get_or_compute_children_merkles(
-        &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
-        trie_node: &mut TrieNodeDeltaMpt,
+        &mut self, trie: &DeltaMpt, trie_node: &mut TrieNodeDeltaMpt,
+        owned_node_set: &mut OwnedNodeSet,
+        children_merkle_map: &mut ChildrenMerkleMap,
         allocator_ref: AllocatorRefRefDeltaMpt,
     ) -> Result<MaybeMerkleTable>
     {
@@ -425,8 +438,9 @@ impl CowNodeRef {
             (_, None) => {
                 return self.compute_children_merkles(
                     trie,
-                    owned_node_set,
                     trie_node,
+                    owned_node_set,
+                    children_merkle_map,
                     allocator_ref,
                 );
             }
@@ -441,8 +455,9 @@ impl CowNodeRef {
                         // db, fallback
                         self.compute_children_merkles(
                             trie,
-                            owned_node_set,
                             trie_node,
+                            owned_node_set,
+                            children_merkle_map,
                             allocator_ref,
                         )
                     }
@@ -467,6 +482,7 @@ impl CowNodeRef {
                                         .get_or_compute_merkle(
                                             trie,
                                             owned_node_set,
+                                            children_merkle_map,
                                             allocator_ref,
                                         );
                                     cow_child_node.into_child().unwrap();
@@ -818,3 +834,4 @@ use rlp::*;
 use std::{
     cell::Cell, hint::unreachable_unchecked, ops::Deref, sync::atomic::Ordering,
 };
+use crate::db::COL_CHILDREN_MERKLES;

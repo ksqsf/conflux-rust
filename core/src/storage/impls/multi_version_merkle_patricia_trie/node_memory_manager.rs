@@ -22,6 +22,8 @@ pub type AllocatorRef<'a, CacheAlgoDataT> =
 pub type AllocatorRefRef<'a, CacheAlgoDataT> =
     &'a AllocatorRef<'a, CacheAlgoDataT>;
 
+pub type ChildrenMerkleMap = BTreeMap<DeltaMptDbKey, ChildrenMerkleTable>;
+
 pub type RLFUPosT = u32;
 pub type CacheAlgorithmDeltaMpt = LRU<RLFUPosT, DeltaMptDbKey>;
 pub type CacheAlgoDataDeltaMpt =
@@ -832,3 +834,5 @@ use std::{
         Arc,
     },
 };
+use std::collections::{BTreeSet, BTreeMap};
+use crate::storage::impls::multi_version_merkle_patricia_trie::merkle_patricia_trie::merkle::ChildrenMerkleTable;

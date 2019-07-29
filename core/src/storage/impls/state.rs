@@ -10,6 +10,7 @@ pub struct State<'a> {
     delta_trie: Arc<DeltaMpt>,
     delta_trie_root: Option<NodeRefDeltaMpt>,
     owned_node_set: Option<OwnedNodeSet>,
+    children_merkle_map: ChildrenMerkleMap,
     dirty: bool,
 }
 
@@ -23,6 +24,7 @@ impl<'a> State<'a> {
             delta_trie: state_trees.3,
             delta_trie_root: state_trees.4,
             owned_node_set: Some(Default::default()),
+            children_merkle_map: Default::default(),
             dirty: false,
         }
     }
@@ -269,6 +271,7 @@ impl<'a> State<'a> {
                 let merkle = cow_root.get_or_compute_merkle(
                     &self.delta_trie,
                     self.owned_node_set.as_mut().unwrap(),
+                    &mut self.children_merkle_map,
                     &allocator,
                 )?;
                 cow_root.into_child();
@@ -368,6 +371,14 @@ impl<'a> State<'a> {
                     db_key.to_string().as_bytes(),
                 );
 
+                for (node_db_key, children_merkles) in &self.children_merkle_map {
+                    commit_transaction.transaction.put(
+                        COL_CHILDREN_MERKLES,
+                        node_db_key.to_string().as_bytes(),
+                        &rlp::encode_list(children_merkles),
+                    );
+                }
+
                 self.manager
                     .db
                     .key_value()
@@ -406,7 +417,7 @@ impl<'a> State<'a> {
 
 use super::{
     super::{
-        super::db::COL_DELTA_TRIE, state::*, state_manager::*, storage_db::*,
+        super::db::{COL_DELTA_TRIE, COL_CHILDREN_MERKLES}, state::*, state_manager::*, storage_db::*,
     },
     errors::*,
     multi_version_merkle_patricia_trie::{merkle_patricia_trie::*, DeltaMpt},
@@ -422,3 +433,4 @@ use std::{
     hint::unreachable_unchecked,
     sync::{atomic::Ordering, Arc},
 };
+use crate::storage::impls::multi_version_merkle_patricia_trie::node_memory_manager::ChildrenMerkleMap;

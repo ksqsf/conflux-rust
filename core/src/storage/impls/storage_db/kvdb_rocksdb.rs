@@ -15,7 +15,7 @@ impl DeltaDbTrait for KvdbRocksdb {
 
 impl MerkleDbTrait for KvdbRocksdb {
     #[inline]
-    fn get_children_merkles_data(
+    fn get_children_merkles_raw_data(
         &self, key: &[u8],
     ) -> Result<Option<Box<[u8]>>> {
         Ok(self
