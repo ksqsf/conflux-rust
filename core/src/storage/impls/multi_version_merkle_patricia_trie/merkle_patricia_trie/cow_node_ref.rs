@@ -286,6 +286,7 @@ impl CowNodeRef {
     // FIXME: to have a new trait for a MPT.
     fn commit_dirty_recurse_into_children(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
+        children_merkle_map: &mut ChildrenMerkleMap,
         trie_node: &mut TrieNodeDeltaMpt,
         commit_transaction: &mut AtomicCommitTransaction,
         cache_manager: &mut CacheManagerDeltaMpt,
@@ -305,6 +306,7 @@ impl CowNodeRef {
                 let commit_result = cow_child_node.commit_dirty_recursively(
                     trie,
                     owned_node_set,
+                    children_merkle_map,
                     trie_node,
                     commit_transaction,
                     cache_manager,
@@ -414,8 +416,8 @@ impl CowNodeRef {
         }
 
         match &self.node_ref {
-            NodeRefDeltaMpt::Dirty { original_db_key: Some(key), .. } => {
-                children_merkle_map.insert(*key, merkles.clone());
+            NodeRefDeltaMpt::Dirty { index, .. } => {
+                children_merkle_map.insert(*index, merkles.clone());
             }
             _ => {}
         }
@@ -551,9 +553,21 @@ impl CowNodeRef {
         Ok(())
     }
 
+    unsafe fn get_precomputed_children_merkles_unchecked<'a: 'b, 'b>(
+        &'b self, children_merkle_map: &'a ChildrenMerkleMap,
+    ) -> Option<&'a ChildrenMerkleTable> {
+        match &self.node_ref {
+            NodeRefDeltaMpt::Committed { .. } => unreachable_unchecked(),
+            NodeRefDeltaMpt::Dirty { index, .. } => {
+                children_merkle_map.get(index)
+            }
+        }
+    }
+
     /// Recursively commit dirty nodes.
     pub fn commit_dirty_recursively(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
+        children_merkle_map: &mut ChildrenMerkleMap,
         trie_node: &mut TrieNodeDeltaMpt,
         commit_transaction: &mut AtomicCommitTransaction,
         cache_manager: &mut CacheManagerDeltaMpt,
@@ -564,6 +578,7 @@ impl CowNodeRef {
             self.commit_dirty_recurse_into_children(
                 trie,
                 owned_node_set,
+                children_merkle_map,
                 trie_node,
                 commit_transaction,
                 cache_manager,
@@ -576,6 +591,19 @@ impl CowNodeRef {
                 commit_transaction.info.row_number.to_string().as_bytes(),
                 trie_node.rlp_bytes().as_slice(),
             );
+
+            if let Some(merkles) = unsafe {
+                self.get_precomputed_children_merkles_unchecked(
+                    children_merkle_map,
+                )
+            } {
+                commit_transaction.transaction.put(
+                    COL_CHILDREN_MERKLES,
+                    commit_transaction.info.row_number.to_string().as_bytes(),
+                    &rlp::encode_list(merkles).into_boxed_slice(),
+                );
+            }
+
             commit_transaction.info.row_number =
                 commit_transaction.info.row_number.get_next()?;
 
@@ -818,7 +846,9 @@ use super::{
         super::{
             errors::*,
             owned_node_set::OwnedNodeSet,
-            state_manager::{AtomicCommitTransaction, COL_DELTA_TRIE},
+            state_manager::{
+                AtomicCommitTransaction, COL_CHILDREN_MERKLES, COL_DELTA_TRIE,
+            },
         },
         guarded_value::GuardedValue,
         node_memory_manager::*,
@@ -834,4 +864,3 @@ use rlp::*;
 use std::{
     cell::Cell, hint::unreachable_unchecked, ops::Deref, sync::atomic::Ordering,
 };
-use crate::db::COL_CHILDREN_MERKLES;

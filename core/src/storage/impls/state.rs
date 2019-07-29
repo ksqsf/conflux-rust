@@ -322,6 +322,7 @@ impl<'a> State<'a> {
                     let result = cow_root.commit_dirty_recursively(
                         &self.delta_trie,
                         self.owned_node_set.as_mut().unwrap(),
+                        &mut self.children_merkle_map,
                         trie_node_mut,
                         &mut commit_transaction,
                         &mut *self
@@ -371,14 +372,6 @@ impl<'a> State<'a> {
                     db_key.to_string().as_bytes(),
                 );
 
-                for (node_db_key, children_merkles) in &self.children_merkle_map {
-                    commit_transaction.transaction.put(
-                        COL_CHILDREN_MERKLES,
-                        node_db_key.to_string().as_bytes(),
-                        &rlp::encode_list(children_merkles),
-                    );
-                }
-
                 self.manager
                     .db
                     .key_value()
@@ -417,14 +410,20 @@ impl<'a> State<'a> {
 
 use super::{
     super::{
-        super::db::{COL_DELTA_TRIE, COL_CHILDREN_MERKLES}, state::*, state_manager::*, storage_db::*,
+        super::db::{COL_CHILDREN_MERKLES, COL_DELTA_TRIE},
+        state::*,
+        state_manager::*,
+        storage_db::*,
     },
     errors::*,
     multi_version_merkle_patricia_trie::{merkle_patricia_trie::*, DeltaMpt},
     owned_node_set::*,
     state_manager::*,
 };
-use crate::statedb::KeyPadding;
+use crate::{
+    statedb::KeyPadding,
+    storage::impls::multi_version_merkle_patricia_trie::node_memory_manager::ChildrenMerkleMap,
+};
 use primitives::{
     EpochId, MerkleHash, StateRoot, StateRootWithAuxInfo, MERKLE_NULL_NODE,
 };
@@ -433,4 +432,3 @@ use std::{
     hint::unreachable_unchecked,
     sync::{atomic::Ordering, Arc},
 };
-use crate::storage::impls::multi_version_merkle_patricia_trie::node_memory_manager::ChildrenMerkleMap;

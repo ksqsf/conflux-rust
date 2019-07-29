@@ -22,7 +22,7 @@ pub type AllocatorRef<'a, CacheAlgoDataT> =
 pub type AllocatorRefRef<'a, CacheAlgoDataT> =
     &'a AllocatorRef<'a, CacheAlgoDataT>;
 
-pub type ChildrenMerkleMap = BTreeMap<DeltaMptDbKey, ChildrenMerkleTable>;
+pub type ChildrenMerkleMap = BTreeMap<ActualSlabIndex, ChildrenMerkleTable>;
 
 pub type RLFUPosT = u32;
 pub type CacheAlgorithmDeltaMpt = LRU<RLFUPosT, DeltaMptDbKey>;
