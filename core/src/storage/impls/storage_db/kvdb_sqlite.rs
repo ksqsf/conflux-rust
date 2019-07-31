@@ -30,7 +30,17 @@ impl SnapshotDbTrait for KvdbSqlite {
     fn get(&self, key: &[u8]) -> Result<Option<Box<[u8]>>> { self.get(key) }
 }
 
+impl MerkleDbTrait for KvdbSqlite {
+    fn get_children_merkles_raw_data(
+        &self, _key: &[u8],
+    ) -> Result<Option<Box<[u8]>>> {
+        unimplemented!()
+    }
+}
+
 use super::super::{
-    super::storage_db::{delta_db::DeltaDbTrait, snapshot_db::SnapshotDbTrait},
+    super::storage_db::{
+        delta_db::DeltaDbTrait, merkle_db::*, snapshot_db::SnapshotDbTrait,
+    },
     errors::*,
 };

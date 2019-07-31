@@ -2,8 +2,6 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-pub type OwnedNodeSet = BTreeSet<NodeRefDeltaMpt>;
-
 pub struct State<'a> {
     manager: &'a StateManager,
     snapshot_db: Arc<SnapshotDb>,
@@ -12,6 +10,7 @@ pub struct State<'a> {
     delta_trie: Arc<DeltaMpt>,
     delta_trie_root: Option<NodeRefDeltaMpt>,
     owned_node_set: Option<OwnedNodeSet>,
+    children_merkle_map: ChildrenMerkleMap,
     dirty: bool,
 }
 
@@ -25,6 +24,7 @@ impl<'a> State<'a> {
             delta_trie: state_trees.3,
             delta_trie_root: state_trees.4,
             owned_node_set: Some(Default::default()),
+            children_merkle_map: Default::default(),
             dirty: false,
         }
     }
@@ -317,6 +317,7 @@ impl<'a> State<'a> {
                 let merkle = cow_root.get_or_compute_merkle(
                     &self.delta_trie,
                     self.owned_node_set.as_mut().unwrap(),
+                    &mut self.children_merkle_map,
                     &allocator,
                 )?;
                 cow_root.into_child();
@@ -367,6 +368,7 @@ impl<'a> State<'a> {
                     let result = cow_root.commit_dirty_recursively(
                         &self.delta_trie,
                         self.owned_node_set.as_mut().unwrap(),
+                        &mut self.children_merkle_map,
                         trie_node_mut,
                         &mut commit_transaction,
                         &mut *self
@@ -397,7 +399,7 @@ impl<'a> State<'a> {
                 let db_key = *{
                     match self.delta_trie_root.as_ref().unwrap() {
                         // Dirty state are committed.
-                        NodeRefDeltaMpt::Dirty { index: _ } => unsafe {
+                        NodeRefDeltaMpt::Dirty { .. } => unsafe {
                             unreachable_unchecked();
                         },
                         // Empty block's state root points to its base state.
@@ -460,16 +462,19 @@ use super::{
     multi_version_merkle_patricia_trie::{
         merkle_patricia_trie::*, DeltaMpt, TrieProof,
     },
+    owned_node_set::*,
     state_manager::*,
     state_proof::StateProof,
 };
-use crate::statedb::KeyPadding;
+use crate::{
+    statedb::KeyPadding,
+    storage::impls::multi_version_merkle_patricia_trie::node_memory_manager::ChildrenMerkleMap,
+};
 use primitives::{
     EpochId, MerkleHash, StateRoot, StateRootWithAuxInfo, MERKLE_NULL_NODE,
 };
 use std::{
     cell::UnsafeCell,
-    collections::BTreeSet,
     hint::unreachable_unchecked,
     sync::{atomic::Ordering, Arc},
 };

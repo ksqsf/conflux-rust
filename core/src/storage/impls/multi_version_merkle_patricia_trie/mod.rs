@@ -138,7 +138,7 @@ impl MultiVersionMerklePatriciaTrie {
 }
 
 pub mod guarded_value;
-pub(self) mod node_ref_map;
+pub mod node_ref_map;
 /// Fork of upstream slab in order to compact data and to provide internal
 /// mutability.
 mod slab;

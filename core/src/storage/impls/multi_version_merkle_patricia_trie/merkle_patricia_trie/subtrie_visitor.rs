@@ -732,7 +732,7 @@ impl<'trie> SubTrieVisitor<'trie> {
 
 use super::{
     super::{
-        super::{errors::*, state::OwnedNodeSet},
+        super::{errors::*, owned_node_set::OwnedNodeSet},
         guarded_value::GuardedValue,
         node_memory_manager::*,
         return_after_use::ReturnAfterUse,
