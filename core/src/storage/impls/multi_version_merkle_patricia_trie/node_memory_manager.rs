@@ -123,6 +123,7 @@ pub struct NodeMemoryManager<
     uncached_leaf_load_times: AtomicUsize,
     uncached_leaf_db_loads: AtomicUsize,
     pub compute_merkle_db_loads: AtomicUsize,
+    children_merkles_db_loads: AtomicUsize,
 }
 
 #[allow(unused)]
@@ -193,6 +194,7 @@ impl<
             uncached_leaf_db_loads: Default::default(),
             uncached_leaf_load_times: Default::default(),
             compute_merkle_db_loads: Default::default(),
+            children_merkles_db_loads: Default::default(),
         }
     }
 
@@ -310,13 +312,12 @@ impl<
     {
         match children_merkle_map.entry(db_key) {
             Entry::Vacant(entry) => {
-                self.db_load_counter.fetch_add(1, Ordering::Relaxed);
+                self.children_merkles_db_loads
+                    .fetch_add(1, Ordering::Relaxed);
                 self.db
                     .get_children_merkles(db_key.to_string().as_bytes())
                     .map(|maybe_merkles| {
-                        maybe_merkles.map(|merkles| {
-                            entry.insert(merkles) as &'a ChildrenMerkleTable
-                        })
+                        maybe_merkles.map(|merkles| &*entry.insert(merkles))
                     })
             }
             Entry::Occupied(entry) => {
@@ -705,6 +706,10 @@ impl<
         debug!(
             "number of db loads for merkle computation {}",
             self.compute_merkle_db_loads.load(Ordering::Relaxed)
+        );
+        debug!(
+            "number of db loads for children merkles {}",
+            self.children_merkles_db_loads.load(Ordering::Relaxed)
         )
     }
 }
