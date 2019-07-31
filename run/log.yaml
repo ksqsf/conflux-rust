@@ -29,7 +29,7 @@ loggers:
     network:
         level: info
     cfxcore:
-        level: info
+        level: debug
     rpc:
         level: info
     discovery:
