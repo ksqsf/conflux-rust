@@ -6,6 +6,7 @@ mod blockhashes;
 mod blockheaders;
 mod blocks;
 mod blocktxn;
+mod capability;
 mod cmpctblocks;
 mod getblockhashesbyepoch;
 mod getblockheaders;
@@ -28,6 +29,9 @@ pub use self::{
     blockheaders::GetBlockHeadersResponse,
     blocks::{GetBlocksResponse, GetBlocksWithPublicResponse},
     blocktxn::GetBlockTxnResponse,
+    capability::{
+        DynamicCapability, DynamicCapabilityChange, DynamicCapabilitySet,
+    },
     cmpctblocks::GetCompactBlocksResponse,
     getblockhashesbyepoch::GetBlockHashesByEpoch,
     getblockheaders::GetBlockHeaders,
@@ -44,6 +48,6 @@ pub use self::{
     terminalblockhashes::GetTerminalBlockHashesResponse,
     transactions::{
         GetTransactions, GetTransactionsResponse, TransIndex,
-        TransactionDigests, TransactionPropagationControl, Transactions,
+        TransactionDigests, Transactions,
     },
 };

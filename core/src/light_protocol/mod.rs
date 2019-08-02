@@ -3,12 +3,18 @@
 // See http://www.gnu.org/licenses/
 
 mod error;
+mod handler;
 mod message;
+mod query_provider;
 mod query_service;
 
-pub(self) mod query_handler;
+use crate::network::ProtocolId;
+const LIGHT_PROTOCOL_ID: ProtocolId = *b"clp"; // Conflux Light Protocol
+const LIGHT_PROTOCOL_VERSION: u8 = 1;
+
+use self::error::{handle as handle_error, Error, ErrorKind};
 
 pub use self::{
-    error::{Error, ErrorKind},
+    handler::Handler, query_provider::QueryProvider,
     query_service::QueryService,
 };

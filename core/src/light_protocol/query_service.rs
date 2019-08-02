@@ -8,22 +8,20 @@ use std::sync::Arc;
 
 use crate::{
     consensus::ConsensusGraph,
-    network::{NetworkService, PeerId, ProtocolId},
+    network::{NetworkService, PeerId},
     statedb::StorageKey,
     storage,
 };
 
 use super::{
+    handler::QueryResult,
     message::{GetStateEntry, GetStateRoot},
-    query_handler::{QueryHandler, QueryResult},
-    Error, ErrorKind,
+    Error, ErrorKind, Handler as LightHandler, LIGHT_PROTOCOL_ID,
+    LIGHT_PROTOCOL_VERSION,
 };
 
-const LIGHT_PROTOCOL_ID: ProtocolId = *b"clp"; // Conflux Light Protocol
-const LIGHT_PROTOCOL_VERSION: u8 = 1;
-
 pub struct QueryService {
-    handler: Arc<QueryHandler>,
+    handler: Arc<LightHandler>,
     network: Arc<NetworkService>,
 }
 
@@ -32,7 +30,7 @@ impl QueryService {
         consensus: Arc<ConsensusGraph>, network: Arc<NetworkService>,
     ) -> Self {
         QueryService {
-            handler: Arc::new(QueryHandler::new(consensus)),
+            handler: Arc::new(LightHandler::new(consensus)),
             network,
         }
     }
@@ -61,7 +59,7 @@ impl QueryService {
         };
 
         self.network.with_context(LIGHT_PROTOCOL_ID, |io| {
-            match self.handler.execute_request(io, peer, req)? {
+            match self.handler.query.execute(io, peer, req)? {
                 QueryResult::StateRoot(sr) => Ok(sr),
                 _ => Err(ErrorKind::UnexpectedResponse.into()),
             }
@@ -80,7 +78,7 @@ impl QueryService {
         };
 
         self.network.with_context(LIGHT_PROTOCOL_ID, |io| {
-            match self.handler.execute_request(io, peer, req)? {
+            match self.handler.query.execute(io, peer, req)? {
                 QueryResult::StateEntry(entry) => Ok(entry),
                 _ => Err(ErrorKind::UnexpectedResponse.into()),
             }

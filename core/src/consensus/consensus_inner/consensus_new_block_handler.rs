@@ -85,16 +85,37 @@ impl ConsensusNewBlockHandler {
     fn checkpoint_at(
         inner: &mut ConsensusGraphInner, new_era_block_arena_index: usize,
     ) {
-        // We first compute the set of blocks inside the new era
+        let new_era_height = inner.arena[new_era_block_arena_index].height;
+        let new_era_stable_height =
+            new_era_height + inner.inner_conf.era_epoch_count;
+        // We first compute the set of blocks inside the new era and we
+        // recompute the past_weight inside the stable height.
         let mut new_era_block_arena_index_set = HashSet::new();
         new_era_block_arena_index_set.clear();
         let mut queue = VecDeque::new();
         queue.push_back(new_era_block_arena_index);
+        inner.arena[new_era_block_arena_index].past_weight = 0;
         new_era_block_arena_index_set.insert(new_era_block_arena_index);
         while let Some(x) = queue.pop_front() {
-            for child in inner.arena[x].children.iter() {
+            let children = inner.arena[x].children.clone();
+            for child in children.iter() {
                 queue.push_back(*child);
                 new_era_block_arena_index_set.insert(*child);
+                if inner.arena[*child].height <= new_era_stable_height {
+                    inner.arena[*child].past_weight = 0;
+                } else {
+                    let stable_era_genesis =
+                        inner.ancestor_at(*child, new_era_stable_height);
+                    let weight_in_my_epoch = inner.total_weight_in_own_epoch(
+                        &inner.arena[*child].data.blockset_in_own_view_of_epoch,
+                        false,
+                        Some(stable_era_genesis),
+                    );
+                    inner.arena[*child].past_weight = inner.arena[x]
+                        .past_weight
+                        + inner.block_weight(x, false)
+                        + weight_in_my_epoch;
+                }
             }
         }
 
@@ -110,7 +131,8 @@ impl ConsensusNewBlockHandler {
         // Next we are going to compute the new legacy_refs map based on current
         // graph information
         let mut new_legacy_refs = HashMap::new();
-        let mut outside_block_hashes = Vec::new();
+        let mut outside_block_hashes =
+            inner.old_era_block_sets.pop_back().unwrap();
         for index in sorted_outside_block_arena_indices.iter() {
             let referees = ConsensusNewBlockHandler::process_referees(
                 inner,
@@ -124,6 +146,7 @@ impl ConsensusNewBlockHandler {
             outside_block_hashes.push(inner.arena[*index].hash);
         }
         inner.old_era_block_sets.push_back(outside_block_hashes);
+        inner.old_era_block_sets.push_back(Vec::new());
         // Now we append all existing legacy_refs into the new_legacy_refs
         for (hash, old_referees) in inner.legacy_refs.iter() {
             let referees = ConsensusNewBlockHandler::process_referees(
@@ -139,7 +162,6 @@ impl ConsensusNewBlockHandler {
         // Next we are going to recompute all referee and referrer information
         // in arena
         let era_parent = inner.arena[new_era_block_arena_index].parent;
-        let new_era_height = inner.arena[new_era_block_arena_index].height;
         let new_era_pivot_index = inner.height_to_pivot_index(new_era_height);
         for v in new_era_block_arena_index_set.iter() {
             inner.arena[*v].referrers = Vec::new();
@@ -214,8 +236,7 @@ impl ConsensusNewBlockHandler {
 
         inner.cur_era_genesis_block_arena_index = new_era_block_arena_index;
         inner.cur_era_genesis_height = new_era_height;
-        inner.cur_era_stable_height =
-            new_era_height + inner.inner_conf.era_epoch_count;
+        inner.cur_era_stable_height = new_era_stable_height;
 
         let cur_era_hash = inner.arena[new_era_block_arena_index].hash.clone();
         let next_era_arena_index =
@@ -717,144 +738,6 @@ impl ConsensusNewBlockHandler {
             }
         }
 
-        //        if !self.conf.bench_mode {
-        //            // Check if the state root is correct or not
-        //            // TODO: We may want to optimize this because now on the
-        // chain            // switch we are going to compute state
-        // twice            let state_root_valid = if
-        // block.block_header.height()                <
-        // DEFERRED_STATE_EPOCH_COUNT            {
-        //                *block.block_header.deferred_state_root()
-        //                    == inner.genesis_block_state_root
-        //                    && *block.block_header.deferred_receipts_root()
-        //                        == inner.genesis_block_receipts_root
-        //                    && *block.block_header.deferred_logs_bloom_hash()
-        //                        == inner.genesis_block_logs_bloom_hash
-        //            } else {
-        //                let mut deferred = new;
-        //                for _ in 0..DEFERRED_STATE_EPOCH_COUNT {
-        //                    deferred = inner.arena[deferred].parent;
-        //                }
-        //                debug_assert!(
-        //                    block.block_header.height() -
-        // DEFERRED_STATE_EPOCH_COUNT                        ==
-        // inner.arena[deferred].height                );
-        //                debug!("Deferred block is {:?}",
-        // inner.arena[deferred].hash);
-        //
-        //                let epoch_exec_commitments =
-        //                    self.data_man.get_epoch_execution_commitments(
-        //                        &inner.arena[deferred].hash,
-        //                    );
-        //
-        //                if self
-        //                    .data_man
-        //                    .storage_manager
-        //                    .contains_state(SnapshotAndEpochIdRef::new(
-        //                        &inner.arena[deferred].hash,
-        //                        None,
-        //                    ))
-        //                    .unwrap()
-        //                    && epoch_exec_commitments.is_some()
-        //                {
-        //                    let mut valid = true;
-        //                    let correct_state_root = self
-        //                        .data_man
-        //                        .storage_manager
-        //
-        // .get_state_no_commit(SnapshotAndEpochIdRef::new(
-        // &inner.arena[deferred].hash,                            None,
-        //                        ))
-        //                        .unwrap()
-        //                        // Unwrapping is safe because the state
-        // exists.                        .unwrap()
-        //                        .get_state_root()
-        //                        .unwrap()
-        //                        .unwrap();
-        //                    if *block.block_header.deferred_state_root()
-        //                        != correct_state_root
-        //                            .state_root
-        //                            .compute_state_root_hash()
-        //                    {
-        //                        self.log_invalid_state_root(
-        //                            &correct_state_root,
-        //                            block
-        //                                .block_header
-        //                                .deferred_state_root_with_aux_info(),
-        //                            deferred,
-        //                            inner,
-        //                        )
-        //                        .ok();
-        //                        valid = false;
-        //                    }
-        //
-        //                    let (correct_receipts_root,
-        // correct_logs_bloom_hash) =
-        // epoch_exec_commitments.unwrap();
-        //
-        //                    if *block.block_header.deferred_receipts_root()
-        //                        != correct_receipts_root
-        //                    {
-        //                        warn!(
-        //                            "Invalid receipt root: {:?}, should be
-        // {:?}",
-        // *block.block_header.deferred_receipts_root(),
-        // correct_receipts_root                        );
-        //                        valid = false;
-        //                    }
-        //
-        //                    if *block.block_header.deferred_logs_bloom_hash()
-        //                        != correct_logs_bloom_hash
-        //                    {
-        //                        warn!(
-        //                            "Invalid logs bloom hash: {:?}, should be
-        // {:?}",
-        // *block.block_header.deferred_logs_bloom_hash(),
-        // correct_logs_bloom_hash                        );
-        //                        valid = false;
-        //                    }
-        //
-        //                    valid
-        //                } else {
-        //                    // Call the expensive function to check this state
-        // root                    let deferred_hash =
-        // inner.arena[deferred].hash;                    let
-        // (state_root, receipts_root, logs_bloom_hash) = self
-        //                        .executor
-        //                        .compute_state_for_block(&deferred_hash,
-        // inner)                        .unwrap();
-        //
-        //                    if state_root.state_root.compute_state_root_hash()
-        //                        != *block.block_header.deferred_state_root()
-        //                    {
-        //                        self.log_invalid_state_root(
-        //                            &state_root,
-        //                            block
-        //                                .block_header
-        //                                .deferred_state_root_with_aux_info(),
-        //                            deferred,
-        //                            inner,
-        //                        )
-        //                        .ok();
-        //                    }
-        //
-        //                    *block.block_header.deferred_state_root()
-        //                        ==
-        // state_root.state_root.compute_state_root_hash()
-        // && *block.block_header.deferred_receipts_root()
-        // == receipts_root                        &&
-        // *block.block_header.deferred_logs_bloom_hash()
-        // == logs_bloom_hash                }
-        //            };
-        //
-        //            if !state_root_valid {
-        //                warn!(
-        //                    "Partially invalid in fork due to deferred block.
-        // me={:?}",                    block.block_header.clone()
-        //                );
-        //                return false;
-        //            }
-        //        }
         return true;
     }
 
@@ -1106,6 +989,7 @@ impl ConsensusNewBlockHandler {
         self.data_man.insert_terminals_to_db(&terminals);
     }
 
+    /// The top level function invoked by ConsensusGraph to insert a new block.
     pub fn on_new_block(
         &self, inner: &mut ConsensusGraphInner, meter: &ConfirmationMeter,
         hash: &H256, block_header: &BlockHeader,
@@ -1127,6 +1011,12 @@ impl ConsensusNewBlockHandler {
             );
             self.data_man
                 .insert_local_block_info_to_db(hash, block_info);
+            inner
+                .old_era_block_sets
+                .iter_mut()
+                .last()
+                .unwrap()
+                .push(hash.clone());
             return;
         }
 
@@ -1290,8 +1180,10 @@ impl ConsensusNewBlockHandler {
                 }
             };
             debug!(
-                "Forked at index {}",
-                inner.get_pivot_block_arena_index(fork_at - 1)
+                "Forked at height {}, fork parent block {}",
+                fork_at,
+                &inner.arena[inner.get_pivot_block_arena_index(fork_at - 1)]
+                    .hash
             );
         }
 
@@ -1365,7 +1257,7 @@ impl ConsensusNewBlockHandler {
         if new_checkpoint_era_genesis != inner.cur_era_genesis_block_arena_index
         {
             info!(
-                "Working on the checkpoint for block {} height {}",
+                "Working on new checkpoint, old checkpoint block {} height {}",
                 &inner.arena[inner.cur_era_genesis_block_arena_index].hash,
                 inner.cur_era_genesis_height
             );
@@ -1373,9 +1265,17 @@ impl ConsensusNewBlockHandler {
                 inner,
                 new_checkpoint_era_genesis,
             );
+            let stable_era_genesis_arena_index =
+                inner.ancestor_at(me, inner.cur_era_stable_height);
+            meter.reset_for_checkpoint(
+                inner.weight_tree.get(stable_era_genesis_arena_index),
+                inner.cur_era_stable_height,
+            );
+            meter.update_confirmation_risks(inner);
             info!(
-                "New checkpoint formed at block {} height {}",
+                "New checkpoint formed at block {} stable block {} height {}",
                 &inner.arena[inner.cur_era_genesis_block_arena_index].hash,
+                &inner.arena[stable_era_genesis_arena_index].hash,
                 inner.cur_era_genesis_height
             );
         }

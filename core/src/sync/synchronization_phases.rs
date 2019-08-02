@@ -5,6 +5,7 @@
 use crate::{
     consensus::ConsensusGraphInner,
     sync::{
+        message::DynamicCapability,
         state::{SnapshotChunkSync, StateSync, Status},
         synchronization_protocol_handler::{
             SynchronizationProtocolHandler, CATCH_UP_EPOCH_LAG_THRESHOLD,
@@ -39,7 +40,10 @@ pub enum SyncPhaseType {
 pub trait SynchronizationPhaseTrait: Send + Sync {
     fn name(&self) -> &'static str;
     fn phase_type(&self) -> SyncPhaseType;
-    fn next(&self) -> SyncPhaseType;
+    fn next(
+        &self, _io: &NetworkContext,
+        _sync_handler: &SynchronizationProtocolHandler,
+    ) -> SyncPhaseType;
     fn start(
         &self, _io: &NetworkContext,
         _sync_handler: &SynchronizationProtocolHandler,
@@ -185,7 +189,14 @@ impl SynchronizationPhaseTrait for CatchUpRecoverBlockHeaderFromDbPhase {
         SyncPhaseType::CatchUpRecoverBlockHeaderFromDB
     }
 
-    fn next(&self) -> SyncPhaseType { SyncPhaseType::CatchUpSyncBlockHeader }
+    fn next(
+        &self, io: &NetworkContext,
+        sync_handler: &SynchronizationProtocolHandler,
+    ) -> SyncPhaseType
+    {
+        DynamicCapability::ServeHeaders(true).broadcast(io, &sync_handler.syn);
+        SyncPhaseType::CatchUpSyncBlockHeader
+    }
 
     fn start(
         &self, _io: &NetworkContext,
@@ -218,7 +229,11 @@ impl SynchronizationPhaseTrait for CatchUpSyncBlockHeaderPhase {
         SyncPhaseType::CatchUpSyncBlockHeader
     }
 
-    fn next(&self) -> SyncPhaseType {
+    fn next(
+        &self, _io: &NetworkContext,
+        _sync_handler: &SynchronizationProtocolHandler,
+    ) -> SyncPhaseType
+    {
         let middle_epoch = self.syn.get_middle_epoch();
         if middle_epoch.is_none() {
             return self.phase_type();
@@ -264,11 +279,39 @@ impl SynchronizationPhaseTrait for CatchUpCheckpointPhase {
 
     fn phase_type(&self) -> SyncPhaseType { SyncPhaseType::CatchUpCheckpoint }
 
-    fn next(&self) -> SyncPhaseType {
-        match self.state_sync.status() {
-            Status::Completed => SyncPhaseType::CatchUpRecoverBlockFromDB,
-            _ => self.phase_type(),
+    fn next(
+        &self, io: &NetworkContext,
+        sync_handler: &SynchronizationProtocolHandler,
+    ) -> SyncPhaseType
+    {
+        let checkpoint = sync_handler
+            .graph
+            .data_man
+            .get_cur_consensus_era_genesis_hash();
+
+        // move to next phase only if checkpoint not changed and sync completed
+        if self.state_sync.checkpoint() == checkpoint
+            && self.state_sync.status() == Status::Completed
+        {
+            DynamicCapability::ServeCheckpoint(Some(checkpoint))
+                .broadcast(io, &sync_handler.syn);
+            return SyncPhaseType::CatchUpRecoverBlockFromDB;
         }
+
+        // start to sync new checkpoint if new era started,
+        if checkpoint != self.state_sync.checkpoint() {
+            match sync_handler.graph.consensus.get_trusted_blame_block() {
+                Some(block) => {
+                    self.state_sync.start(checkpoint, block, io, sync_handler)
+                }
+                None => {
+                    // FIXME should find the trusted blame block
+                    error!("failed to start checkpoint sync, the trusted blame block is unavailable");
+                }
+            }
+        }
+
+        self.phase_type()
     }
 
     fn start(
@@ -283,9 +326,27 @@ impl SynchronizationPhaseTrait for CatchUpCheckpointPhase {
             .data_man
             .get_cur_consensus_era_genesis_hash();
 
-        info!("start to sync state for checkpoint {:?}", checkpoint);
+        let trusted_blame_block = match sync_handler
+            .graph
+            .consensus
+            .get_trusted_blame_block()
+        {
+            Some(block) => block,
+            None => {
+                // FIXME should find the trusted blame block
+                error!("failed to start checkpoint sync, the trusted blame block is unavailable");
+                return;
+            }
+        };
 
-        self.state_sync.start(checkpoint, io, sync_handler);
+        info!("start to sync state for checkpoint {:?}, trusted blame block = {:?}", checkpoint, trusted_blame_block);
+
+        self.state_sync.start(
+            checkpoint,
+            trusted_blame_block,
+            io,
+            sync_handler,
+        );
     }
 }
 
@@ -306,7 +367,13 @@ impl SynchronizationPhaseTrait for CatchUpRecoverBlockFromDbPhase {
         SyncPhaseType::CatchUpRecoverBlockFromDB
     }
 
-    fn next(&self) -> SyncPhaseType { SyncPhaseType::CatchUpSyncBlock }
+    fn next(
+        &self, _io: &NetworkContext,
+        _sync_handler: &SynchronizationProtocolHandler,
+    ) -> SyncPhaseType
+    {
+        SyncPhaseType::CatchUpSyncBlock
+    }
 
     fn start(
         &self, _io: &NetworkContext,
@@ -368,7 +435,11 @@ impl SynchronizationPhaseTrait for CatchUpSyncBlockPhase {
 
     fn phase_type(&self) -> SyncPhaseType { SyncPhaseType::CatchUpSyncBlock }
 
-    fn next(&self) -> SyncPhaseType {
+    fn next(
+        &self, _io: &NetworkContext,
+        _sync_handler: &SynchronizationProtocolHandler,
+    ) -> SyncPhaseType
+    {
         let middle_epoch = self.syn.get_middle_epoch();
         if middle_epoch.is_none() {
             return self.phase_type();
@@ -411,7 +482,11 @@ impl SynchronizationPhaseTrait for NormalSyncPhase {
 
     fn phase_type(&self) -> SyncPhaseType { SyncPhaseType::Normal }
 
-    fn next(&self) -> SyncPhaseType {
+    fn next(
+        &self, _io: &NetworkContext,
+        _sync_handler: &SynchronizationProtocolHandler,
+    ) -> SyncPhaseType
+    {
         // FIXME: handle the case where we need to switch back phase
         self.phase_type()
     }
