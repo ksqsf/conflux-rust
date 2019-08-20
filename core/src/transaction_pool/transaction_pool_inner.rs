@@ -146,8 +146,11 @@ impl ReadyAccountPool {
     fn insert(
         &mut self, tx: Arc<SignedTransaction>,
     ) -> Option<Arc<SignedTransaction>> {
-        self.treap
-            .insert(tx.sender(), tx.clone(), U512::from(tx.gas_price))
+        // FIXME(mk) benchmark, whether this can actually reduce
+        // duplication rate and/or increase reward
+        let gas_price = U512::from(tx.gas_price);
+        let weight = gas_price * gas_price;
+        self.treap.insert(tx.sender(), tx.clone(), weight)
     }
 
     fn pop(&mut self) -> Option<Arc<SignedTransaction>> {
