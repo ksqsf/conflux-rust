@@ -312,6 +312,7 @@ fn generate_options(config: &DatabaseConfig) -> Options {
 	opts.set_write_buffer_size(config.memory_budget_per_col() / 2);
 	opts.increase_parallelism(cmp::max(1, ::num_cpus::get() as i32 / 2));
 	opts.enable_statistics();
+	opts.set_stats_dump_period_sec(60);
 
 	opts
 }
