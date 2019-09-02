@@ -633,25 +633,50 @@ impl CowNodeRef {
             )?;
 
             let db_key = commit_transaction.info.row_number.value;
+            let rlp_bytes = trie_node.rlp_bytes();
             commit_transaction
                 .transaction
                 .borrow_mut()
                 .put_with_number_key(
                     commit_transaction.info.row_number.value.into(),
-                    trie_node.rlp_bytes().as_slice(),
+                    rlp_bytes.as_slice(),
                 )?;
             commit_transaction.info.row_number =
                 commit_transaction.info.row_number.get_next()?;
+            trie.get_node_memory_manager().db_write_key_size.fetch_add(
+                (commit_transaction.info.row_number.value as i64)
+                    .to_string()
+                    .as_bytes()
+                    .len(),
+                Ordering::Relaxed,
+            );
+            trie.get_node_memory_manager()
+                .db_write_value_size
+                .fetch_add(rlp_bytes.len(), Ordering::Relaxed);
 
             let slot = match &self.node_ref {
                 NodeRefDeltaMpt::Dirty { index } => *index,
                 _ => unsafe { unreachable_unchecked() },
             };
             if let Some(children_merkles) = children_merkle_map.remove(&slot) {
-                commit_transaction.transaction.borrow_mut().put(
-                    format!("cm{}", db_key).as_bytes(),
-                    &children_merkles.rlp_bytes(),
-                )?;
+                let key = format!("cm{}", db_key);
+                let value = children_merkles.rlp_bytes();
+                commit_transaction
+                    .transaction
+                    .borrow_mut()
+                    .put(key.as_bytes(), &value)?;
+                trie.get_node_memory_manager()
+                    .db_write_key_size
+                    .fetch_add(key.as_bytes().len(), Ordering::Relaxed);
+                trie.get_node_memory_manager()
+                    .db_write_value_size
+                    .fetch_add(value.as_slice().len(), Ordering::Relaxed);
+                trie.get_node_memory_manager()
+                    .db_write_cm_key_size
+                    .fetch_add(key.as_bytes().len(), Ordering::Relaxed);
+                trie.get_node_memory_manager()
+                    .db_write_cm_value_size
+                    .fetch_add(value.as_slice().len(), Ordering::Relaxed);
             }
 
             let committed_node_ref = NodeRefDeltaMpt::Committed { db_key };

@@ -85,6 +85,9 @@ impl MultiVersionMerklePatriciaTrie {
     pub fn start_commit(
         &self,
     ) -> Result<AtomicCommitTransaction<Box<DeltaDbTransactionTraitObj>>> {
+        self.node_memory_manager
+            .db_commit
+            .fetch_add(1, Ordering::Relaxed);
         Ok(AtomicCommitTransaction {
             info: self.commit_lock.lock(),
             transaction: self.db.start_transaction_dyn(true)?,
@@ -252,4 +255,9 @@ use crate::{
 use keccak_hash::keccak;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use primitives::{EpochId, MerkleHash};
-use std::{any::Any, borrow::BorrowMut, collections::HashMap, sync::Arc};
+use std::{
+    any::Any,
+    borrow::BorrowMut,
+    collections::HashMap,
+    sync::{atomic::Ordering, Arc},
+};
