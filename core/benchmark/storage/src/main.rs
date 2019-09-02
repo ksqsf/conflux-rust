@@ -1650,9 +1650,9 @@ impl TxReplayer {
     }
 
     pub fn log_usage(&self) {
-        unsafe {
-            debug!("disk read {}", proc_disk_read_bytes());
-            debug!("disk write {}", proc_disk_written_bytes());
+        if let Ok(info) = proc_disk_info() {
+            debug!("disk read {}", info.read_bytes);
+            debug!("disk write {}", info.write_bytes);
         }
         debug!("txs processed {}", self.tx_counts.load(Ordering::Relaxed));
         debug!("ops processed {}", self.ops_counts.load(Ordering::Relaxed));
