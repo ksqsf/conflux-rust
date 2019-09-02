@@ -26,6 +26,8 @@ primitives = { path = "../../../primitives" }
 rlp = { version = "0.3.0", features = ["ethereum"] }
 serde_json = "1.0"
 
+rusage = { git = "https://github.com/ksqsf/rusage" }
+
 [patch.'https://github.com/paritytech/parity-ethereum']
 
 # The upstream ethkey uses the master branch of rust-secp256k1,

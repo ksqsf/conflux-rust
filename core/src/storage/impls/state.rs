@@ -402,6 +402,25 @@ impl<'a> State<'a> {
                             .to_string()
                             .as_bytes(),
                     )?;
+                    self.delta_trie
+                        .get_node_memory_manager()
+                        .db_write_key_size
+                        .fetch_add(
+                            "last_row_number".as_bytes().len(),
+                            Ordering::Relaxed,
+                        );
+                    self.delta_trie
+                        .get_node_memory_manager()
+                        .db_write_value_size
+                        .fetch_add(
+                            commit_transaction
+                                .info
+                                .row_number
+                                .to_string()
+                                .as_bytes()
+                                .len(),
+                            Ordering::Relaxed,
+                        );
                 }
 
                 let db_key = *{
@@ -415,15 +434,29 @@ impl<'a> State<'a> {
                     }
                 };
 
+                let epoch_root_key = [
+                    "state_root_db_key_for_epoch_id_".as_bytes(),
+                    epoch_id.as_ref(),
+                ]
+                .concat();
                 commit_transaction.transaction.put(
-                    [
-                        "state_root_db_key_for_epoch_id_".as_bytes(),
-                        epoch_id.as_ref(),
-                    ]
-                    .concat()
-                    .as_slice(),
+                    epoch_root_key.as_slice(),
                     db_key.to_string().as_bytes(),
                 )?;
+                self.delta_trie
+                    .get_node_memory_manager()
+                    .db_write_key_size
+                    .fetch_add(
+                        epoch_root_key.as_slice().len(),
+                        Ordering::Relaxed,
+                    );
+                self.delta_trie
+                    .get_node_memory_manager()
+                    .db_write_value_size
+                    .fetch_add(
+                        db_key.to_string().as_bytes().len(),
+                        Ordering::Relaxed,
+                    );
 
                 commit_transaction
                     .transaction

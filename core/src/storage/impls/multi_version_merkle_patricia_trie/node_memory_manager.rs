@@ -116,6 +116,16 @@ pub struct NodeMemoryManager<
     uncached_leaf_db_loads: AtomicUsize,
     pub compute_merkle_db_loads: AtomicUsize,
     children_merkle_db_loads: AtomicUsize,
+
+    pub db_commit: AtomicUsize, // Total number of commits
+    pub db_write_key_size: AtomicUsize, // Total
+    pub db_write_value_size: AtomicUsize, // Total
+    pub db_write_cm_key_size: AtomicUsize,
+    pub db_write_cm_value_size: AtomicUsize,
+    pub db_read_key_size: AtomicUsize, // Total
+    pub db_read_value_size: AtomicUsize, // Total
+    pub db_read_cm_key_size: AtomicUsize,
+    pub db_read_cm_value_size: AtomicUsize,
 }
 
 #[allow(unused)]
@@ -184,6 +194,15 @@ impl<
             uncached_leaf_load_times: Default::default(),
             compute_merkle_db_loads: Default::default(),
             children_merkle_db_loads: Default::default(),
+            db_commit: Default::default(),
+            db_write_key_size: Default::default(),
+            db_write_value_size: Default::default(),
+            db_write_cm_key_size: Default::default(),
+            db_write_cm_value_size: Default::default(),
+            db_read_key_size: Default::default(),
+            db_read_value_size: Default::default(),
+            db_read_cm_key_size: Default::default(),
+            db_read_cm_value_size: Default::default(),
         }
     }
 
@@ -251,7 +270,11 @@ impl<
     {
         self.db_load_counter.fetch_add(1, Ordering::Relaxed);
         // We never save null node in db.
+        self.db_read_key_size
+            .fetch_add((db_key as i64).to_string().len(), Ordering::Relaxed);
         let rlp_bytes = db.get_with_number_key(db_key.into())?.unwrap();
+        self.db_read_value_size
+            .fetch_add(rlp_bytes.len(), Ordering::Relaxed);
         let rlp = Rlp::new(rlp_bytes.as_ref());
         let mut trie_node = MemOptimizedTrieNode::decode(&rlp)?;
 
@@ -296,11 +319,20 @@ impl<
     ) -> Result<Option<CompactedChildrenTable<MerkleHash>>> {
         self.children_merkle_db_loads
             .fetch_add(1, Ordering::Relaxed);
+        let db_key = format!("cm{}", db_key);
+        self.db_read_key_size
+            .fetch_add(db_key.len(), Ordering::Relaxed);
+        self.db_read_cm_key_size
+            .fetch_add(db_key.len(), Ordering::Relaxed);
         // cm stands for children merkles, abbreviated to save space
-        let rlp_bytes = match db.get(format!("cm{}", db_key).as_bytes())? {
+        let rlp_bytes = match db.get(db_key.as_bytes())? {
             None => return Ok(None),
             Some(rlp_bytes) => rlp_bytes,
         };
+        self.db_read_value_size
+            .fetch_add(db_key.len(), Ordering::Relaxed);
+        self.db_read_cm_value_size
+            .fetch_add(db_key.len(), Ordering::Relaxed);
         let rlp = Rlp::new(rlp_bytes.as_ref());
         let table = CompactedChildrenTable::from(
             ChildrenTable::<MerkleHash>::decode(&rlp)?,
@@ -701,6 +733,39 @@ impl<
         debug!(
             "number of db loads for children merkles {}",
             self.children_merkle_db_loads.load(Ordering::Relaxed)
+        );
+        debug!("db_commit {}", self.db_commit.load(Ordering::Relaxed));
+        debug!(
+            "db_write_key_size {}",
+            self.db_write_key_size.load(Ordering::Relaxed)
+        );
+        debug!(
+            "db_write_value_size {}",
+            self.db_write_value_size.load(Ordering::Relaxed)
+        );
+        debug!(
+            "db_write_cm_key_size {}",
+            self.db_write_cm_key_size.load(Ordering::Relaxed)
+        );
+        debug!(
+            "db_write_cm_value_size {}",
+            self.db_write_cm_value_size.load(Ordering::Relaxed)
+        );
+        debug!(
+            "db_read_key_size {}",
+            self.db_read_key_size.load(Ordering::Relaxed)
+        );
+        debug!(
+            "db_read_value_size {}",
+            self.db_read_value_size.load(Ordering::Relaxed)
+        );
+        debug!(
+            "db_read_cm_key_size {}",
+            self.db_read_cm_key_size.load(Ordering::Relaxed)
+        );
+        debug!(
+            "db_read_cm_value_size {}",
+            self.db_read_cm_value_size.load(Ordering::Relaxed)
         );
     }
 }

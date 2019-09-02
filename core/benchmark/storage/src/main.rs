@@ -682,7 +682,7 @@ impl<RequestT: FIFOConsumerRequestTrait> FIFOConsumerThread<RequestT> {
 
     pub fn new_arc<ResultT: ResultTrait>(
         consumer_results: Arc<Mutex<FIFOConsumerResult<ResultT>>>,
-        mut processor: Box<FnMut(RequestT) -> (usize, ResultT) + Send + Sync>,
+        mut processor: Box<dyn FnMut(RequestT) -> (usize, ResultT) + Send + Sync>,
     ) -> Arc<Mutex<FIFOConsumerThread<RequestT>>>
     {
         let (sender, receiver) = mpsc::sync_channel(10_000);
@@ -1573,8 +1573,8 @@ fn tx_extract<U: TxExtractor, T: Deref<Target = U> + Sync + Send + 'static>(
 
 struct TxReplayer {
     storage_manager: Arc<StorageManager>,
-    tx_counts: Cell<u64>,
-    ops_counts: Cell<u64>,
+    tx_counts: AtomicU64,
+    ops_counts: AtomicU64,
 
     exit: Arc<(Mutex<bool>, Condvar)>,
 }
@@ -1589,7 +1589,7 @@ impl Drop for TxReplayer {
 impl TxReplayer {
     const EPOCH_TXS: u64 = 20000;
 
-    pub fn new(db_dir: &str, reset_db: bool) -> TxReplayer {
+    pub fn new_arc(db_dir: &str, reset_db: bool) -> Arc<TxReplayer> {
         if reset_db {
             match fs::remove_dir_all(db_dir) {
                 Ok(_) => {},
@@ -1626,9 +1626,16 @@ impl TxReplayer {
         ));
 
         let exit: Arc<(Mutex<bool>, Condvar)> = Default::default();
-
-        let storage_manager_log_weak_ptr = Arc::downgrade(&storage_manager);
         let exit_clone = exit.clone();
+
+        let tx_replayer = Arc::new(TxReplayer {
+            storage_manager,
+            tx_counts: AtomicU64::new(0),
+            ops_counts: AtomicU64::new(0),
+            exit: exit,
+        });
+
+        let tx_replayer_log_weak_ptr = Arc::downgrade(&tx_replayer);
         thread::spawn(move || loop {
             let mut exit_lock = exit_clone.0.lock();
             if exit_clone
@@ -1636,21 +1643,27 @@ impl TxReplayer {
                 .wait_for(&mut exit_lock, Duration::from_millis(5000))
                 .timed_out()
             {
-                let manager = storage_manager_log_weak_ptr.upgrade();
-                match manager {
+                let tx_replayer = tx_replayer_log_weak_ptr.upgrade();
+                match tx_replayer {
                     None => return,
-                    Some(manager) => manager.log_usage(),
+                    Some(tx_replayer) => {
+                        tx_replayer.log_usage();
+                    }
                 };
-            } else {
             }
         });
 
-        TxReplayer {
-            storage_manager,
-            tx_counts: Cell::new(0),
-            ops_counts: Cell::new(0),
-            exit,
+        tx_replayer
+    }
+
+    pub fn log_usage(&self) {
+        unsafe {
+            debug!("disk read {}", proc_disk_read_bytes());
+            debug!("disk write {}", proc_disk_written_bytes());
         }
+        debug!("txs processed {}", self.tx_counts.load(Ordering::Relaxed));
+        debug!("ops processed {}", self.ops_counts.load(Ordering::Relaxed));
+        self.storage_manager.log_usage();
     }
 
     pub fn commit(latest_state: &mut StateDb, txs: u64, ops: u64) -> H256 {
@@ -1670,7 +1683,7 @@ impl TxReplayer {
     {
         if let Some(sender) = tx.sender {
             let maybe_account = latest_state.get_account(&sender).unwrap();
-            self.ops_counts.set(self.ops_counts.get() + 2);
+            self.ops_counts.fetch_add(2, Ordering::Relaxed);
             match maybe_account {
                 Some(mut account) => {
                     account.balance = account
@@ -1710,15 +1723,15 @@ impl TxReplayer {
             latest_state
                 .set::<Account>(&latest_state.account_key(&receiver), &account)
                 .unwrap();
-            self.ops_counts.set(self.ops_counts.get() + 2);
+            self.ops_counts.fetch_add(2, Ordering::Relaxed);
         }
 
-        self.tx_counts.set(self.tx_counts.get() + 1);
-        if self.tx_counts.get() % Self::EPOCH_TXS == 0 {
+        self.tx_counts.fetch_add(1, Ordering::Relaxed);
+        if self.tx_counts.load(Ordering::Relaxed) % Self::EPOCH_TXS == 0 {
             *last_state_root = Self::commit(
                 latest_state,
-                self.tx_counts.get(),
-                self.ops_counts.get(),
+                self.tx_counts.load(Ordering::Relaxed),
+                self.ops_counts.load(Ordering::Relaxed),
             );
             *latest_state = StateDb::new(
                 self.storage_manager
@@ -1746,7 +1759,7 @@ fn hexstr_to_h256(hex_str: &str) -> H256 {
 }
 
 fn tx_replay(matches: ArgMatches) -> errors::Result<()> {
-    let tx_replayer = TxReplayer::new(
+    let tx_replayer = TxReplayer::new_arc(
         matches.value_of("storage_db_dir").unwrap(),
         matches.occurrences_of("reset_db") > 0,
     );
@@ -1909,10 +1922,11 @@ fn tx_replay(matches: ArgMatches) -> errors::Result<()> {
     }
     last_state_root = TxReplayer::commit(
         &mut latest_state,
-        tx_replayer.tx_counts.get(),
-        tx_replayer.ops_counts.get(),
+        tx_replayer.tx_counts.load(Ordering::Relaxed),
+        tx_replayer.ops_counts.load(Ordering::Relaxed),
     );
     warn!("tx replay last state_root = {:?}", last_state_root);
+    tx_replayer.log_usage();
     Ok(())
 }
 
@@ -2040,6 +2054,8 @@ fn main() -> errors::Result<()> {
     }
 }
 
+
+use rusage::*;
 use cfxcore::{
     statedb::StateDb,
     storage::{
@@ -2068,7 +2084,6 @@ use parking_lot::{Condvar, Mutex};
 use primitives::Account;
 use rlp::{Decodable, *};
 use std::{
-    cell::Cell,
     collections::{vec_deque::VecDeque, BTreeMap},
     fmt::Debug,
     fs::{self, File},
@@ -2079,7 +2094,7 @@ use std::{
     path::Path,
     slice,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicUsize, AtomicU64, Ordering},
         mpsc, Arc,
     },
     thread::{self, JoinHandle},
