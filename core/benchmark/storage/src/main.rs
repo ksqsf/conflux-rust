@@ -1650,9 +1650,14 @@ impl TxReplayer {
     }
 
     pub fn log_usage(&self) {
-        if let Ok(info) = proc_disk_info() {
-            debug!("disk read {}", info.read_bytes);
-            debug!("disk write {}", info.write_bytes);
+        match proc_disk_info() {
+            Ok(info) => {
+                 debug!("disk read {}", info.read_bytes);
+                debug!("disk write {}", info.write_bytes);
+            }
+            Err(err) => {
+                debug!("failed to read proc disk info: {:?}", err);
+            }
         }
         debug!("txs processed {}", self.tx_counts.load(Ordering::Relaxed));
         debug!("ops processed {}", self.ops_counts.load(Ordering::Relaxed));
