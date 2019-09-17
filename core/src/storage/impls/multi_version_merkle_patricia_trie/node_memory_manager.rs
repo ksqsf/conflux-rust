@@ -126,6 +126,7 @@ pub struct NodeMemoryManager<
     pub db_read_value_size: AtomicUsize, // Total
     pub db_read_cm_key_size: AtomicUsize,
     pub db_read_cm_value_size: AtomicUsize,
+    children_merkle_cache_hit_counter: AtomicUsize,
 }
 
 #[allow(unused)]
@@ -203,6 +204,7 @@ impl<
             db_read_value_size: Default::default(),
             db_read_cm_key_size: Default::default(),
             db_read_cm_value_size: Default::default(),
+            children_merkle_cache_hit_counter: Default::default(),
         }
     }
 
@@ -316,23 +318,31 @@ impl<
 
     pub fn load_children_merkles_from_db(
         &self, db: &dyn KeyValueDbTraitRead, db_key: DeltaMptDbKey,
-    ) -> Result<Option<CompactedChildrenTable<MerkleHash>>> {
-        self.children_merkle_db_loads
-            .fetch_add(1, Ordering::Relaxed);
-        let db_key = format!("cm{}", db_key);
-        self.db_read_key_size
-            .fetch_add(db_key.len(), Ordering::Relaxed);
-        self.db_read_cm_key_size
-            .fetch_add(db_key.len(), Ordering::Relaxed);
-        // cm stands for children merkles, abbreviated to save space
-        let rlp_bytes = match db.get(db_key.as_bytes())? {
-            None => return Ok(None),
-            Some(rlp_bytes) => rlp_bytes,
+        children_merkle_cache: &ChildrenMerkleCache,
+    ) -> Result<Option<CompactedChildrenTable<MerkleHash>>>
+    {
+        let rlp_bytes = match children_merkle_cache.get(&db_key) {
+            Some(rlp_bytes) => {
+                self.children_merkle_cache_hit_counter
+                    .fetch_add(1, Ordering::Relaxed);
+                rlp_bytes.clone().into_boxed_slice()
+            }
+            None => {
+                let db_key = format!("cm{}", db_key);
+                self.db_read_value_size
+                    .fetch_add(db_key.len(), Ordering::Relaxed);
+                self.db_read_cm_value_size
+                    .fetch_add(db_key.len(), Ordering::Relaxed);
+                self.children_merkle_db_loads
+                    .fetch_add(1, Ordering::Relaxed);
+                // cm stands for children merkles, abbreviated to save space
+                match db.get(db_key.as_bytes())? {
+                    None => return Ok(None),
+                    Some(rlp_bytes) => rlp_bytes,
+                }
+            }
         };
-        self.db_read_value_size
-            .fetch_add(db_key.len(), Ordering::Relaxed);
-        self.db_read_cm_value_size
-            .fetch_add(db_key.len(), Ordering::Relaxed);
+
         let rlp = Rlp::new(rlp_bytes.as_ref());
         let table = CompactedChildrenTable::from(
             ChildrenTable::<MerkleHash>::decode(&rlp)?,
@@ -767,6 +777,11 @@ impl<
             "db_read_cm_value_size {}",
             self.db_read_cm_value_size.load(Ordering::Relaxed)
         );
+        debug!(
+            "number of children merkle cache hit {}",
+            self.children_merkle_cache_hit_counter
+                .load(Ordering::Relaxed)
+        );
     }
 }
 
@@ -880,7 +895,10 @@ impl<
 }
 
 use super::{
-    super::{super::storage_db::key_value_db::KeyValueDbTraitRead, errors::*},
+    super::{
+        super::storage_db::key_value_db::KeyValueDbTraitRead, errors::*,
+        state::ChildrenMerkleCache,
+    },
     cache::algorithm::{
         lru::LRU, CacheAccessResult, CacheAlgoDataTrait, CacheAlgorithm,
         CacheIndexTrait, CacheStoreUtil,
