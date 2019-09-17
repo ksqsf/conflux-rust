@@ -4,6 +4,7 @@
 
 pub type ChildrenMerkleMap =
     BTreeMap<ActualSlabIndex, VanillaChildrenTable<MerkleHash>>;
+pub type ChildrenMerkleCache = BTreeMap<DeltaMptDbKey, Vec<u8>>;
 
 pub struct State<'a> {
     manager: &'a StateManager,
@@ -18,6 +19,9 @@ pub struct State<'a> {
     /// Children merkle hashes. Only used for committing and computing
     /// merkle root. It will be cleared after being committed.
     children_merkle_map: ChildrenMerkleMap,
+
+    /// A cache for children merkle hashes.
+    children_merkle_cache: ChildrenMerkleCache,
 }
 
 impl<'a> State<'a> {
@@ -32,6 +36,7 @@ impl<'a> State<'a> {
             owned_node_set: Some(Default::default()),
             dirty: false,
             children_merkle_map: ChildrenMerkleMap::new(),
+            children_merkle_cache: ChildrenMerkleCache::new(),
         }
     }
 
@@ -326,6 +331,7 @@ impl<'a> State<'a> {
                     &allocator,
                     self.delta_trie.db_read_only(),
                     &mut self.children_merkle_map,
+                    &self.children_merkle_cache,
                     0,
                 )?;
                 cow_root.into_child();
@@ -385,6 +391,7 @@ impl<'a> State<'a> {
                             .lock(),
                         &allocator,
                         &mut self.children_merkle_map,
+                        &mut self.children_merkle_cache,
                     );
                     self.children_merkle_map.clear();
                     self.delta_trie_root =
@@ -464,7 +471,7 @@ use super::{
     super::{state::*, state_manager::*, storage_db::*},
     errors::*,
     multi_version_merkle_patricia_trie::{
-        merkle_patricia_trie::{children_table::VanillaChildrenTable, *},
+        merkle_patricia_trie::{children_table::*, *},
         node_memory_manager::ActualSlabIndex,
         DeltaMpt, TrieProof,
     },
@@ -472,7 +479,10 @@ use super::{
     state_manager::*,
     state_proof::StateProof,
 };
-use crate::statedb::KeyPadding;
+use crate::{
+    statedb::KeyPadding,
+    storage::impls::multi_version_merkle_patricia_trie::node_ref_map::DeltaMptDbKey,
+};
 use primitives::{
     EpochId, MerkleHash, StateRoot, StateRootWithAuxInfo, MERKLE_NULL_NODE,
 };
