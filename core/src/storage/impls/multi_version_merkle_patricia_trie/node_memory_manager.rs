@@ -262,7 +262,7 @@ impl<
     fn load_from_db<'c: 'a, 'a>(
         &self, allocator: AllocatorRefRef<'a, CacheAlgoDataT>,
         cache_manager: &'c Mutex<CacheManager<CacheAlgoDataT, CacheAlgorithmT>>,
-        db: &dyn KeyValueDbTraitRead, db_key: DeltaMptDbKey,
+        db: &mut DeltaDbOwnedReadTraitObj, db_key: DeltaMptDbKey,
     ) -> Result<
         GuardedValue<
             MutexGuard<'c, CacheManager<CacheAlgoDataT, CacheAlgorithmT>>,
@@ -274,7 +274,7 @@ impl<
         // We never save null node in db.
         self.db_read_key_size
             .fetch_add((db_key as i64).to_string().len(), Ordering::Relaxed);
-        let rlp_bytes = db.get_with_number_key(db_key.into())?.unwrap();
+        let rlp_bytes = db.get_mut_with_number_key(db_key.into())?.unwrap();
         self.db_read_value_size
             .fetch_add(rlp_bytes.len(), Ordering::Relaxed);
         let rlp = Rlp::new(rlp_bytes.as_ref());
@@ -317,7 +317,7 @@ impl<
     }
 
     pub fn load_children_merkles_from_db(
-        &self, db: &dyn KeyValueDbTraitRead, db_key: DeltaMptDbKey,
+        &self, db: &mut DeltaDbOwnedReadTraitObj, db_key: DeltaMptDbKey,
         children_merkle_cache: &ChildrenMerkleCache,
     ) -> Result<Option<CompactedChildrenTable<MerkleHash>>>
     {
@@ -329,16 +329,22 @@ impl<
             }
             None => {
                 let db_key = format!("cm{}", db_key);
-                self.db_read_value_size
-                    .fetch_add(db_key.len(), Ordering::Relaxed);
-                self.db_read_cm_value_size
-                    .fetch_add(db_key.len(), Ordering::Relaxed);
                 self.children_merkle_db_loads
                     .fetch_add(1, Ordering::Relaxed);
+                self.db_read_key_size
+                    .fetch_add(db_key.len(), Ordering::Relaxed);
+                self.db_read_cm_key_size
+                    .fetch_add(db_key.len(), Ordering::Relaxed);
                 // cm stands for children merkles, abbreviated to save space
-                match db.get(db_key.as_bytes())? {
+                match db.get_mut(db_key.as_bytes())? {
                     None => return Ok(None),
-                    Some(rlp_bytes) => rlp_bytes,
+                    Some(rlp_bytes) => {
+                        self.db_read_value_size
+                            .fetch_add(rlp_bytes.len(), Ordering::Relaxed);
+                        self.db_read_cm_value_size
+                            .fetch_add(rlp_bytes.len(), Ordering::Relaxed);
+                        rlp_bytes
+                    }
                 }
             }
         };
@@ -482,7 +488,7 @@ impl<
         &self, allocator: AllocatorRefRef<'a, CacheAlgoDataT>,
         node: NodeRefDeltaMpt,
         cache_manager: &'c Mutex<CacheManager<CacheAlgoDataT, CacheAlgorithmT>>,
-        db: &dyn KeyValueDbTraitRead, is_loaded_from_db: &mut bool,
+        db: &mut DeltaDbOwnedReadTraitObj, is_loaded_from_db: &mut bool,
     ) -> Result<
         GuardedValue<
             Option<
@@ -610,7 +616,7 @@ impl<
         &self, allocator: AllocatorRefRef<'a, CacheAlgoDataT>,
         node: NodeRefDeltaMpt,
         cache_manager: &'c Mutex<CacheManager<CacheAlgoDataT, CacheAlgorithmT>>,
-        db: &dyn KeyValueDbTraitRead, is_loaded_from_db: &mut bool,
+        db: &mut DeltaDbOwnedReadTraitObj, is_loaded_from_db: &mut bool,
     ) -> Result<
         GuardedValue<
             Option<
@@ -648,7 +654,7 @@ impl<
         &self, allocator: AllocatorRefRef<'a, CacheAlgoDataT>,
         node: NodeRefDeltaMpt,
         cache_manager: &'c Mutex<CacheManager<CacheAlgoDataT, CacheAlgorithmT>>,
-        db: &dyn KeyValueDbTraitRead, is_loaded_from_db: &mut bool,
+        db: &mut DeltaDbOwnedReadTraitObj, is_loaded_from_db: &mut bool,
     ) -> Result<
         GuardedValue<
             Option<
@@ -712,9 +718,7 @@ impl<
     pub fn log_usage(&self) {
         let cache_manager = self.cache.lock();
         cache_manager.node_ref_map.log_usage();
-        cache_manager
-            .cache_algorithm
-            .log_usage(&"trie node cache ".into());
+        cache_manager.cache_algorithm.log_usage("trie node cache ");
         let allocator_ref = self.get_allocator();
         debug!(
             "trie node allocator: max allowed size: {}, \
@@ -896,8 +900,8 @@ impl<
 
 use super::{
     super::{
-        super::storage_db::key_value_db::KeyValueDbTraitRead, errors::*,
-        state::ChildrenMerkleCache,
+        super::storage_db::delta_db_manager::DeltaDbOwnedReadTraitObj,
+        errors::*, state::ChildrenMerkleCache,
     },
     cache::algorithm::{
         lru::LRU, CacheAccessResult, CacheAlgoDataTrait, CacheAlgorithm,

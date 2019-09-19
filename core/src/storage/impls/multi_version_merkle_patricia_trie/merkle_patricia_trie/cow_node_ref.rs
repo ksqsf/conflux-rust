@@ -2,6 +2,10 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
+/// Set this flag to true to enable storing children merkles for
+/// possibily faster merkle root computation.
+const ENABLE_CHILDREN_MERKLES: bool = true;
+
 /// Load children merkles only when the number of uncached children nodes is
 /// above this threshold. Note that a small value will result in worse
 /// performance.
@@ -14,7 +18,7 @@ const CHILDREN_MERKLE_UNCACHED_THRESHOLD: u32 = 4;
 /// Depth 5 = 69905 (70k) nodes.
 /// Depth 6 = 1118481 (1.1 million) nodes.
 /// Depth 7 = 17895697 (18 million) nodes.
-const CHILDREN_MERKLE_DEPTH_THRESHOLD: u8 = 3;
+const CHILDREN_MERKLE_DEPTH_THRESHOLD: u8 = 4;
 
 /// CowNodeRef facilities access and modification to trie nodes in multi-version
 /// MPT. It offers read-only access to the original trie node, and creates an
@@ -194,7 +198,8 @@ impl CowNodeRef {
     /// prevent any further calls on self.
     pub fn get_trie_node<'a, 'c: 'a>(
         &'a mut self, node_memory_manager: &'c NodeMemoryManagerDeltaMpt,
-        allocator: AllocatorRefRefDeltaMpt<'a>, db: &dyn KeyValueDbTraitRead,
+        allocator: AllocatorRefRefDeltaMpt<'a>,
+        db: &mut DeltaDbOwnedReadTraitObj,
     ) -> Result<
         GuardedValue<
             Option<MutexGuard<'c, CacheManagerDeltaMpt>>,
@@ -245,7 +250,7 @@ impl CowNodeRef {
         mut self, trie: &DeltaMpt, owned_node_set: &OwnedNodeSet,
         guarded_trie_node: GuardedMaybeOwnedTrieNodeAsCowCallParam,
         key_prefix: CompressedPathRaw, values: &mut Vec<(Vec<u8>, Box<[u8]>)>,
-        db: &dyn KeyValueDbTraitRead,
+        db: &mut DeltaDbOwnedReadTraitObj,
     ) -> Result<()>
     {
         if self.owned {
@@ -305,7 +310,7 @@ impl CowNodeRef {
     }
 
     fn commit_dirty_recurse_into_children<
-        Transaction: BorrowMut<dyn KeyValueDbTransactionTrait>,
+        Transaction: BorrowMut<DeltaDbTransactionTraitObj>,
     >(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
         trie_node: &mut TrieNodeDeltaMpt,
@@ -383,7 +388,8 @@ impl CowNodeRef {
     /// Get if unowned, compute if owned.
     pub fn get_or_compute_merkle(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
-        allocator_ref: AllocatorRefRefDeltaMpt, db: &dyn KeyValueDbTraitRead,
+        allocator_ref: AllocatorRefRefDeltaMpt,
+        db: &mut DeltaDbOwnedReadTraitObj,
         children_merkle_map: &mut ChildrenMerkleMap,
         children_merkle_cache: &ChildrenMerkleCache, depth: u8,
     ) -> Result<MerkleHash>
@@ -432,14 +438,15 @@ impl CowNodeRef {
     fn get_or_compute_children_merkles(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
         trie_node: &mut TrieNodeDeltaMpt,
-        allocator_ref: AllocatorRefRefDeltaMpt, db: &dyn KeyValueDbTraitRead,
+        allocator_ref: AllocatorRefRefDeltaMpt,
+        db: &mut DeltaDbOwnedReadTraitObj,
         children_merkle_map: &mut ChildrenMerkleMap,
         children_merkle_cache: &ChildrenMerkleCache, depth: u8,
     ) -> Result<MaybeMerkleTable>
     {
         match trie_node.children_table.get_children_count() {
             0 => Ok(None),
-            _ => {
+            _ if ENABLE_CHILDREN_MERKLES => {
                 let original_db_key = match self.node_ref {
                     NodeRefDeltaMpt::Dirty { index } => {
                         owned_node_set.get_original_db_key(index)
@@ -478,6 +485,17 @@ impl CowNodeRef {
                     depth,
                 )
             }
+            _ => self.compute_children_merkles(
+                trie,
+                owned_node_set,
+                trie_node,
+                allocator_ref,
+                db,
+                children_merkle_map,
+                children_merkle_cache,
+                None,
+                depth,
+            ),
         }
     }
 
@@ -485,7 +503,8 @@ impl CowNodeRef {
     fn compute_children_merkles(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
         trie_node: &mut TrieNodeDeltaMpt,
-        allocator_ref: AllocatorRefRefDeltaMpt, db: &dyn KeyValueDbTraitRead,
+        allocator_ref: AllocatorRefRefDeltaMpt,
+        db: &mut DeltaDbOwnedReadTraitObj,
         children_merkle_map: &mut ChildrenMerkleMap,
         children_merkle_cache: &ChildrenMerkleCache,
         known_merkles: Option<CompactedChildrenTable<MerkleHash>>, depth: u8,
@@ -554,7 +573,7 @@ impl CowNodeRef {
         &self, owned_node_set: &OwnedNodeSet, trie: &DeltaMpt,
         guarded_trie_node: GuardedMaybeOwnedTrieNodeAsCowCallParam,
         key_prefix: CompressedPathRaw, values: &mut KVInserterType,
-        db: &dyn KeyValueDbTraitRead,
+        db: &mut DeltaDbOwnedReadTraitObj,
     ) -> Result<()>
     {
         if guarded_trie_node.as_ref().as_ref().has_value() {
@@ -602,7 +621,7 @@ impl CowNodeRef {
 
     /// Recursively commit dirty nodes.
     pub fn commit_dirty_recursively<
-        Transaction: BorrowMut<dyn KeyValueDbTransactionTrait>,
+        Transaction: BorrowMut<DeltaDbTransactionTraitObj>,
     >(
         &mut self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
         trie_node: &mut TrieNodeDeltaMpt,
@@ -709,7 +728,7 @@ impl CowNodeRef {
         self, trie: &DeltaMpt, owned_node_set: &mut OwnedNodeSet,
         trie_node: GuardedMaybeOwnedTrieNodeAsCowCallParam,
         child_node_ref: NodeRefDeltaMpt, child_index: u8,
-        db: &dyn KeyValueDbTraitRead,
+        db: &mut DeltaDbOwnedReadTraitObj,
     ) -> Result<CowNodeRef>
     {
         let node_memory_manager = trie.get_node_memory_manager();
@@ -928,8 +947,8 @@ impl CowNodeRef {
 use super::{
     super::{
         super::{
-            super::storage_db::key_value_db::{
-                KeyValueDbTraitRead, KeyValueDbTransactionTrait,
+            super::storage_db::delta_db_manager::{
+                DeltaDbOwnedReadTraitObj, DeltaDbTransactionTraitObj,
             },
             errors::*,
             owned_node_set::OwnedNodeSet,
