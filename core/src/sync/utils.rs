@@ -17,6 +17,7 @@ use crate::{
     ConsensusGraph, TransactionPool,
 };
 use cfx_types::{H256, U256};
+use lengine::*;
 use parking_lot::Mutex;
 use primitives::{Block, BlockHeaderBuilder};
 use std::{collections::HashMap, path::Path, sync::Arc};
@@ -89,13 +90,15 @@ pub fn initialize_synchronization_graph(
     .map_err(|e| format!("Failed to open database {:?}", e))
     .unwrap();
 
+    let storage_log_file = Engine::open(db_dir).unwrap();
+
     let worker_thread_pool = Arc::new(Mutex::new(ThreadPool::with_name(
         "Tx Recover".into(),
         WORKER_COMPUTATION_PARALLELISM,
     )));
 
     let storage_manager = Arc::new(StorageManager::new(
-        ledger_db.clone(),
+        Arc::new(Mutex::new(storage_log_file)),
         StorageConfiguration::default(),
     ));
 

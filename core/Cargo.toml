@@ -54,6 +54,8 @@ malloc_size_of_derive = {path = "../util/malloc_size_of_derive"}
 fallible-iterator = "0.2"
 strfmt = "0.1"
 
+lengine = { git = "git://github.com/ksqsf/lengine.git" }
+
 [dev-dependencies]
 rustc-hex = "1.0"
 criterion = "0.2"

@@ -8,7 +8,7 @@
 /// block starts a new snapshot by looking at consensus graph.
 pub const SNAPSHOT_EPOCHS_CAPACITY: u64 = 1_000_000_000_000_000;
 
-pub type DeltaDbManager = DeltaDbManagerRocksdb;
+pub type DeltaDbManager = DeltaDbManagerLog;
 pub type SnapshotDbManager = SnapshotDbManagerSqlite;
 pub type SnapshotDb = <SnapshotDbManager as SnapshotDbManagerTrait>::SnapshotDb;
 
@@ -23,7 +23,7 @@ pub type StateTrees = (
 
 pub struct StateManager {
     delta_trie: Arc<DeltaMpt>,
-    pub db: Arc<SystemDB>,
+    pub db: Arc<Mutex<Engine>>,
     storage_manager: Arc<StorageManager>,
     pub number_committed_nodes: AtomicUsize,
 }
@@ -48,9 +48,7 @@ impl StateManager {
     }
 
     // FIXME: change the parameter.
-    pub fn new(db: Arc<SystemDB>, conf: StorageConfiguration) -> Self {
-        debug!("Storage conf {:?}", conf);
-
+    pub fn new(db: Arc<Mutex<Engine>>, conf: StorageConfiguration) -> Self {
         let storage_manager =
             Arc::new(StorageManager::new(DeltaDbManager::new(db.clone())));
 
@@ -270,13 +268,15 @@ use super::{
         merkle_patricia_trie::NodeRefDeltaMpt, *,
     },
     storage_db::{
-        delta_db_manager_rocksdb::DeltaDbManagerRocksdb,
+        delta_db_manager_log::DeltaDbManagerLog,
         snapshot_db_manager_sqlite::SnapshotDbManagerSqlite,
     },
     storage_manager::storage_manager::StorageManager,
 };
-use crate::{ext_db::SystemDB, snapshot::snapshot::Snapshot, statedb::StateDb};
+use crate::{snapshot::snapshot::Snapshot, statedb::StateDb};
 use cfx_types::{Address, U256};
+use lengine::Engine;
+use parking_lot::Mutex;
 use primitives::{
     Account, Block, BlockHeaderBuilder, EpochId, MerkleHash, MERKLE_NULL_NODE,
 };

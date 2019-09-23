@@ -32,6 +32,7 @@ use cfxcore::block_data_manager::BlockDataManager;
 use ctrlc::CtrlC;
 use db::SystemDB;
 use keylib::public_to_address;
+use lengine::Engine;
 use network::NetworkService;
 use parking_lot::{Condvar, Mutex};
 use runtime::Runtime;
@@ -121,10 +122,15 @@ impl ArchiveClient {
             &db_config,
         )
         .map_err(|e| format!("Failed to open database {:?}", e))?;
+        let storage_log_file = Arc::new(Mutex::new(
+            Engine::open(conf.raw_conf.db_dir.as_ref().unwrap()).map_err(
+                |e| format!("Failed to open storage log file {:?}", e),
+            )?,
+        ));
 
         let secret_store = Arc::new(SecretStore::new());
         let storage_manager = Arc::new(StorageManager::new(
-            ledger_db.clone(),
+            storage_log_file.clone(),
             conf.storage_config(),
         ));
         {

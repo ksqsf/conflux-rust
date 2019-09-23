@@ -12,6 +12,7 @@ use std::{
 use cfx_types::U256;
 use ctrlc::CtrlC;
 use db::SystemDB;
+use lengine::Engine;
 use network::NetworkService;
 use parking_lot::{Condvar, Mutex};
 use secret_store::SecretStore;
@@ -104,10 +105,15 @@ impl LightClient {
             &db_config,
         )
         .map_err(|e| format!("Failed to open database {:?}", e))?;
+        let storage_log_file = Arc::new(Mutex::new(
+            Engine::open(conf.raw_conf.db_dir.as_ref().unwrap()).map_err(
+                |e| format!("Failed to open storage log file {:?}", e),
+            )?,
+        ));
 
         let secret_store = Arc::new(SecretStore::new());
         let storage_manager = Arc::new(StorageManager::new(
-            ledger_db.clone(),
+            storage_log_file.clone(),
             conf.storage_config(),
         ));
         {

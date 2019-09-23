@@ -6,9 +6,11 @@
 mod state;
 
 use super::state_manager::StateManager;
-use crate::{ext_db::SystemDB, storage::state_manager::StorageConfiguration};
+use crate::storage::state_manager::StorageConfiguration;
 use elastic_array::ElasticArray128;
 use kvdb::{DBTransaction, KeyValueDB};
+use lengine::*;
+use parking_lot::Mutex;
 use std::{io::Result, sync::Arc};
 
 #[derive(Default)]
@@ -49,8 +51,9 @@ impl KeyValueDB for FakeDbForStateTest {
 }
 
 pub fn new_state_manager_for_testing() -> StateManager {
+    let log = Engine::open("TEST_DB").unwrap();
     StateManager::new(
-        Arc::new(SystemDB::new(Arc::new(FakeDbForStateTest::default()))),
+        Arc::new(Mutex::new(log)),
         StorageConfiguration {
             cache_start_size: 1_000_000,
             cache_size: 20_000_000,
