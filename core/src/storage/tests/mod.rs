@@ -51,7 +51,8 @@ impl KeyValueDB for FakeDbForStateTest {
 }
 
 pub fn new_state_manager_for_testing() -> StateManager {
-    let log = Engine::open("TEST_DB").unwrap();
+    let mut log = Engine::open("TEST_DB").unwrap();
+    log.reset().unwrap();
     StateManager::new(
         Arc::new(Mutex::new(log)),
         StorageConfiguration {
