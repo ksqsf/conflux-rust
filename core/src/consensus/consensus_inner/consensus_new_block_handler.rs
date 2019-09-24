@@ -24,11 +24,12 @@ use crate::{
 };
 use cfx_types::H256;
 use hibitset::{BitSet, BitSetLike, DrainableBitSet};
+use parity_bytes::ToPretty;
 use primitives::{
     BlockHeader, BlockHeaderBuilder, SignedTransaction, StateRootWithAuxInfo,
 };
 use std::{
-    cmp::max,
+    cmp::{max, min},
     collections::{HashMap, HashSet, VecDeque},
     io::Write,
     mem,
@@ -705,7 +706,7 @@ impl ConsensusNewBlockHandler {
 
         let dump_dir = &self.conf.debug_dump_dir_invalid_state_root;
         let invalid_state_root_path =
-            dump_dir.clone() + &deferred_block_hash.hex();
+            dump_dir.clone() + &deferred_block_hash.to_hex();
         std::fs::create_dir_all(dump_dir)?;
 
         if std::path::Path::new(&invalid_state_root_path).exists() {
@@ -1248,10 +1249,25 @@ impl ConsensusNewBlockHandler {
         if pivot_changed {
             if inner.pivot_chain.len() > EPOCH_SET_PERSISTENCE_DELAY as usize {
                 let fork_at_pivot_index = inner.height_to_pivot_index(fork_at);
+                // Starting from old_len ensures that all epochs within
+                // [old_len - delay, new_len - delay) will be inserted to db, so
+                // no epochs will be skipped. Starting from
+                // fork_at ensures that any epoch set change will be
+                // overwritten.
+                let start_pivot_index = if old_pivot_chain_len
+                    >= EPOCH_SET_PERSISTENCE_DELAY as usize
+                {
+                    min(
+                        fork_at_pivot_index,
+                        old_pivot_chain_len
+                            - EPOCH_SET_PERSISTENCE_DELAY as usize,
+                    )
+                } else {
+                    fork_at_pivot_index
+                };
                 let to_persist_pivot_index = inner.pivot_chain.len()
                     - EPOCH_SET_PERSISTENCE_DELAY as usize;
-                inner.persist_epoch_set_hashes(to_persist_pivot_index);
-                for pivot_index in fork_at_pivot_index..to_persist_pivot_index {
+                for pivot_index in start_pivot_index..to_persist_pivot_index {
                     inner.persist_epoch_set_hashes(pivot_index);
                 }
             }
