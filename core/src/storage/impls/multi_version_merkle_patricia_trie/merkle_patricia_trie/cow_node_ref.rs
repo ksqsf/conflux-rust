@@ -4,7 +4,7 @@
 
 /// Set this flag to true to enable storing children merkles for
 /// possibily faster merkle root computation.
-const ENABLE_CHILDREN_MERKLES: bool = true;
+const ENABLE_CHILDREN_MERKLES: bool = false;
 
 /// Load children merkles only when the number of uncached children nodes is
 /// above this threshold. Note that a small value will result in worse
