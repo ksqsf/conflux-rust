@@ -1603,6 +1603,7 @@ impl TxReplayer {
             None,
             db::DatabaseCompactionProfile::SSD,
             cfxcore::db::NUM_COLUMNS.clone(),
+            false,
         );
 
         let db = db::open_database(db_dir, &db_config).unwrap();
