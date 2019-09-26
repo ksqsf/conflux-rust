@@ -19,7 +19,6 @@ use crate::{
 use cfx_types::{Address, H256, U256};
 use core::str::FromStr;
 use lengine::*;
-use cfx_types::{H256, U256};
 use parking_lot::Mutex;
 use primitives::{Block, BlockHeaderBuilder};
 use std::{collections::HashMap, path::Path, sync::Arc};

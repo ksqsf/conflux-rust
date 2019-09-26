@@ -33,7 +33,6 @@ use ctrlc::CtrlC;
 use db::SystemDB;
 use keylib::public_to_address;
 use lengine::Engine;
-use keylib::public_to_address;
 use network::NetworkService;
 use parking_lot::{Condvar, Mutex};
 use runtime::Runtime;

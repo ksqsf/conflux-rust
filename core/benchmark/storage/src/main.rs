@@ -1598,17 +1598,10 @@ impl TxReplayer {
             }
         }
 
-        let db_config = db::db_config(
-            Path::new(db_dir),
-            None,
-            db::DatabaseCompactionProfile::SSD,
-            cfxcore::db::NUM_COLUMNS.clone(),
-        );
-
-        let db = db::open_database(db_dir, &db_config).unwrap();
+        let db = Engine::open(db_dir).unwrap();
 
         let storage_manager = Arc::new(StorageManager::new(
-            db,
+            Arc::new(Mutex::new(db)),
             StorageConfiguration {
                 //cache_start_size: 10_000,
                 cache_start_size:
@@ -2086,3 +2079,4 @@ use std::{
     time::Duration,
     vec::Vec,
 };
+use lengine::Engine;
