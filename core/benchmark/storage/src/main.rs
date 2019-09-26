@@ -682,7 +682,7 @@ impl<RequestT: FIFOConsumerRequestTrait> FIFOConsumerThread<RequestT> {
 
     pub fn new_arc<ResultT: ResultTrait>(
         consumer_results: Arc<Mutex<FIFOConsumerResult<ResultT>>>,
-        mut processor: Box<FnMut(RequestT) -> (usize, ResultT) + Send + Sync>,
+        mut processor: Box<dyn FnMut(RequestT) -> (usize, ResultT) + Send + Sync>,
     ) -> Arc<Mutex<FIFOConsumerThread<RequestT>>>
     {
         let (sender, receiver) = mpsc::sync_channel(10_000);

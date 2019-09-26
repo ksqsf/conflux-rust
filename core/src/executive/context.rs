@@ -377,7 +377,7 @@ mod tests {
         vm_factory::VmFactory,
     };
     use cfx_types::{Address, U256};
-    use std::{ops::Deref, str::FromStr};
+    use std::ops::Deref;
 
     #[allow(dead_code)]
     fn get_test_origin() -> OriginInfo {
@@ -393,7 +393,7 @@ mod tests {
     fn get_test_env() -> Env {
         Env {
             number: 100,
-            author: Address::from_low_u64_be(0),
+            author: 0.into(),
             timestamp: 0,
             difficulty: 0.into(),
             last_hashes: Arc::new(vec![]),
@@ -555,11 +555,11 @@ mod tests {
         // this should panic because we have no balance on any account
         ctx.call(
             &"0000000000000000000000000000000000000000000000000000000000120000".parse::<U256>().unwrap(),
-            &Address::zero(),
-            &Address::zero(),
+            &Address::new(),
+            &Address::new(),
             Some("0000000000000000000000000000000000000000000000000000000000150000".parse::<U256>().unwrap()),
             &[],
-            &Address::zero(),
+            &Address::new(),
             CallType::Call,
             false,
         ).ok().unwrap();
@@ -568,10 +568,9 @@ mod tests {
     #[test]
     fn can_log() {
         let log_data = vec![120u8, 110u8];
-        let log_topics = vec![H256::from_str(
+        let log_topics = vec![H256::from(
             "af0fa234a6af46afa23faf23bcbc1c1cb4bcb7bcbe7e7e7ee3ee2edddddddddd",
-        )
-        .unwrap()];
+        )];
 
         let mut setup = TestSetup::new();
         let state = &mut setup.state.unwrap();
@@ -598,7 +597,7 @@ mod tests {
 
     #[test]
     fn can_suiside() {
-        let refund_account = &Address::zero();
+        let refund_account = &Address::new();
 
         let mut setup = TestSetup::new();
         let state = &mut setup.state.unwrap();

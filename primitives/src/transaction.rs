@@ -3,7 +3,7 @@
 // See http://www.gnu.org/licenses/
 
 use crate::{bytes::Bytes, hash::keccak};
-use cfx_types::{Address, BigEndianHash, H160, H256, U256};
+use cfx_types::{Address, H160, H256, U256};
 use keylib::{
     self, public_to_address, recover, verify_public, Public, Secret, Signature,
 };
@@ -197,7 +197,7 @@ impl Transaction {
             r: sig.r().into(),
             s: sig.s().into(),
             v: sig.v(),
-            hash: H256::zero(),
+            hash: 0.into(),
             rlp_size: None,
         }
         .compute_hash()
@@ -329,9 +329,7 @@ impl TransactionWithSignature {
 
     /// Construct a signature object from the sig.
     pub fn signature(&self) -> Signature {
-        let r: H256 = BigEndianHash::from_uint(&self.r);
-        let s: H256 = BigEndianHash::from_uint(&self.s);
-        Signature::from_rsv(&r, &s, self.v)
+        Signature::from_rsv(&self.r.into(), &self.s.into(), self.v)
     }
 
     /// Checks whether the signature has a low 's' value.

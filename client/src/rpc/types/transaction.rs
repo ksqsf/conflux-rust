@@ -5,7 +5,7 @@
 use crate::rpc::types::{
     receipt::Receipt, Bytes, H160 as RpcH160, H256 as RpcH256, U256 as RpcU256,
 };
-use ethkey::Error;
+use keylib::Error;
 use primitives::{
     transaction::Action, SignedTransaction,
     Transaction as PrimitiveTransaction, TransactionWithSignature,

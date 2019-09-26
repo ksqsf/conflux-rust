@@ -61,7 +61,6 @@ impl Substate {
 #[cfg(test)]
 mod tests {
     use super::Substate;
-    use cfx_types::Address;
     use primitives::LogEntry;
 
     #[test]
@@ -73,23 +72,19 @@ mod tests {
     #[test]
     fn accrue() {
         let mut sub_state = Substate::new();
-        sub_state
-            .contracts_created
-            .push(Address::from_low_u64_be(1));
+        sub_state.contracts_created.push(1u64.into());
         sub_state.logs.push(LogEntry {
-            address: Address::from_low_u64_be(1),
+            address: 1u64.into(),
             topics: vec![],
             data: vec![],
         });
         sub_state.sstore_clears_refund = (15000 * 5).into();
-        sub_state.suicides.insert(Address::from_low_u64_be(10));
+        sub_state.suicides.insert(10u64.into());
 
         let mut sub_state_2 = Substate::new();
-        sub_state_2
-            .contracts_created
-            .push(Address::from_low_u64_be(2));
+        sub_state_2.contracts_created.push(2u64.into());
         sub_state_2.logs.push(LogEntry {
-            address: Address::from_low_u64_be(1),
+            address: 1u64.into(),
             topics: vec![],
             data: vec![],
         });

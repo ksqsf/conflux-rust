@@ -3,6 +3,7 @@
 // See http://www.gnu.org/licenses/
 
 use crate::io::IoError;
+use keylib;
 use rlp::{self, Decodable, DecoderError, Encodable, Rlp, RlpStream};
 use std::{fmt, io, net};
 

@@ -2,8 +2,6 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-use parity_bytes::ToPretty;
-
 pub struct SnapshotDbManagerSqlite {
     // TODO: persistent in db.
     epoch_to_snapshot_root: RwLock<HashMap<EpochId, MerkleHash>>,
@@ -23,7 +21,7 @@ impl SnapshotDbManagerSqlite {
     }
 
     fn get_snapshot_db_path(&self, snapshot_root: &MerkleHash) -> String {
-        self.snapshot_path.clone() + &snapshot_root.to_hex()
+        self.snapshot_path.clone() + &snapshot_root.hex()
     }
 
     fn get_temp_snapshot_db_path(
@@ -31,8 +29,8 @@ impl SnapshotDbManagerSqlite {
     ) -> String {
         self.snapshot_path.clone()
             + "merge_temp_"
-            + &old_snapshot_root.to_hex()
-            + &delta_merkle_root.to_hex()
+            + &old_snapshot_root.hex()
+            + &delta_merkle_root.hex()
     }
 
     /// Returns error when cow copy fails; Ok(true) when cow copy succeeded;

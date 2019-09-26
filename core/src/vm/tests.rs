@@ -108,11 +108,11 @@ impl MockContext {
 
 impl Context for MockContext {
     fn initial_storage_at(&self, _key: &H256) -> Result<H256> {
-        Ok(H256::zero())
+        Ok(H256::new())
     }
 
     fn storage_at(&self, key: &H256) -> Result<H256> {
-        Ok(self.store.get(key).unwrap_or(&H256::zero()).clone())
+        Ok(self.store.get(key).unwrap_or(&H256::new()).clone())
     }
 
     fn set_storage(&mut self, key: H256, value: H256) -> Result<()> {
@@ -135,10 +135,7 @@ impl Context for MockContext {
     }
 
     fn blockhash(&mut self, number: &U256) -> H256 {
-        self.blockhashes
-            .get(number)
-            .unwrap_or(&H256::zero())
-            .clone()
+        self.blockhashes.get(number).unwrap_or(&H256::new()).clone()
     }
 
     fn create(

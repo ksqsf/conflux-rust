@@ -27,28 +27,29 @@ mod memory;
 mod shared_cache;
 mod stack;
 
+use crate::{bytes::Bytes, hash::keccak};
+use cfx_types::{Address, H256, U256, U512};
+use std::{cmp, marker::PhantomData, mem, sync::Arc};
+
+use crate::vm::{
+    self, ActionParams, ActionValue, CallType, ContractCreateResult,
+    CreateContractAddress, GasLeft, MessageCallResult, ParamsType, ReturnData,
+    Spec, TrapError, TrapKind,
+};
+
+use super::{
+    evm::CostType,
+    instructions::{self, Instruction, InstructionInfo},
+};
+
 pub use self::shared_cache::SharedCache;
 use self::{
     gasometer::Gasometer,
     memory::Memory,
     stack::{Stack, VecStack},
 };
-use super::{
-    evm::CostType,
-    instructions::{self, Instruction, InstructionInfo},
-};
-use crate::{
-    bytes::Bytes,
-    hash::keccak,
-    vm::{
-        self, ActionParams, ActionValue, CallType, ContractCreateResult,
-        CreateContractAddress, GasLeft, MessageCallResult, ParamsType,
-        ReturnData, Spec, TrapError, TrapKind,
-    },
-};
+
 use bit_set::BitSet;
-use cfx_types::{Address, BigEndianHash, H256, U256, U512};
-use std::{cmp, convert::TryFrom, marker::PhantomData, mem, sync::Arc};
 
 const GASOMETER_PROOF: &str = "If gasometer is None, Err is immediately returned in step; this function is only called by step; qed";
 
@@ -650,10 +651,7 @@ impl<Cost: CostType> Interpreter<Cost> {
                 let init_size = self.stack.pop_back();
                 let address_scheme = match instruction {
 					instructions::CREATE => CreateContractAddress::FromSenderAndNonce,
-					instructions::CREATE2 => {
-                        let h: H256 = BigEndianHash::from_uint(&self.stack.pop_back());
-                        CreateContractAddress::FromSenderSaltAndCodeHash(h)
-                    },
+					instructions::CREATE2 => CreateContractAddress::FromSenderSaltAndCodeHash(self.stack.pop_back().into()),
 					_ => unreachable!("instruction can only be CREATE/CREATE2 checked above; qed"),
 				};
 
@@ -908,7 +906,7 @@ impl<Cost: CostType> Interpreter<Cost> {
                     .stack
                     .pop_n(no_of_topics)
                     .iter()
-                    .map(BigEndianHash::from_uint)
+                    .map(H256::from)
                     .collect();
                 context.log(topics, self.mem.read_slice(offset, size))?;
             }
@@ -971,25 +969,26 @@ impl<Cost: CostType> Interpreter<Cost> {
                 let offset = self.stack.pop_back();
                 let size = self.stack.pop_back();
                 let k = keccak(self.mem.read_slice(offset, size));
-                self.stack.push(k.into_uint());
+                self.stack.push(U256::from(&*k));
             }
             instructions::SLOAD => {
-                let key = BigEndianHash::from_uint(&self.stack.pop_back());
-                let word = context.storage_at(&key)?.into_uint();
+                let key = H256::from(&self.stack.pop_back());
+                let word = U256::from(&*context.storage_at(&key)?);
                 self.stack.push(word);
             }
             instructions::SSTORE => {
-                let address = BigEndianHash::from_uint(&self.stack.pop_back());
+                let address = H256::from(&self.stack.pop_back());
                 let val = self.stack.pop_back();
 
-                let current_val = context.storage_at(&address)?.into_uint();
+                let current_val = U256::from(&*context.storage_at(&address)?);
+
                 if !current_val.is_zero() && val.is_zero() {
                     let sstore_clears_schedule =
                         context.spec().sstore_refund_gas;
                     context.add_sstore_refund(sstore_clears_schedule);
                 }
 
-                context.set_storage(address, BigEndianHash::from_uint(&val))?;
+                context.set_storage(address, H256::from(&val))?;
             }
             instructions::PC => {
                 self.stack.push(U256::from(self.reader.position - 1));
@@ -1056,7 +1055,7 @@ impl<Cost: CostType> Interpreter<Cost> {
                 let address = u256_to_address(&self.stack.pop_back());
                 let hash =
                     context.extcodehash(&address)?.unwrap_or_else(H256::zero);
-                self.stack.push(hash.into_uint());
+                self.stack.push(U256::from(hash));
             }
             instructions::CALLDATACOPY => {
                 Self::copy_data_to_memory(
@@ -1106,7 +1105,7 @@ impl<Cost: CostType> Interpreter<Cost> {
             instructions::BLOCKHASH => {
                 let block_number = self.stack.pop_back();
                 let block_hash = context.blockhash(&block_number);
-                self.stack.push(block_hash.into_uint());
+                self.stack.push(U256::from(&*block_hash));
             }
             instructions::COINBASE => {
                 self.stack
@@ -1339,7 +1338,7 @@ impl<Cost: CostType> Interpreter<Cost> {
                         let a5 = U512::from(a);
                         let res = a5.overflowing_add(U512::from(b)).0;
                         let x = res % U512::from(c);
-                        U256::try_from(x).expect("U512 % U256 fits U256; qed")
+                        U256::from(x)
                     } else {
                         U256::zero()
                     },
@@ -1355,7 +1354,7 @@ impl<Cost: CostType> Interpreter<Cost> {
                         let a5 = U512::from(a);
                         let res = a5.overflowing_mul(U512::from(b)).0;
                         let x = res % U512::from(c);
-                        U256::try_from(x).expect("U512 % U256 fits U256; qed")
+                        U256::from(x)
                     } else {
                         U256::zero()
                     },
@@ -1503,13 +1502,10 @@ fn set_sign(value: U256, sign: bool) -> U256 {
 }
 
 #[inline]
-fn u256_to_address(value: &U256) -> Address {
-    let addr: H256 = BigEndianHash::from_uint(value);
-    Address::from(addr)
-}
+fn u256_to_address(value: &U256) -> Address { Address::from(H256::from(value)) }
 
 #[inline]
-fn address_to_u256(value: Address) -> U256 { H256::from(value).into_uint() }
+fn address_to_u256(value: Address) -> U256 { U256::from(&*H256::from(value)) }
 
 #[cfg(test)]
 mod tests {
@@ -1519,7 +1515,6 @@ mod tests {
         tests::{test_finalize, MockContext},
         ActionParams, ActionValue, Exec,
     };
-    use cfx_types::Address;
     use rustc_hex::FromHex;
     use std::sync::Arc;
 
@@ -1538,15 +1533,13 @@ mod tests {
         let code = "7feeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff006000527faaffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffaa6020526000620f120660406000601773945304eb96065b2a98b57a48a06ae28d285a71b56101f4f1600055".from_hex().unwrap();
 
         let mut params = ActionParams::default();
-        params.address = Address::from_low_u64_be(5);
+        params.address = 5.into();
         params.gas = 300_000.into();
         params.gas_price = 1.into();
         params.value = ActionValue::Transfer(100_000.into());
         params.code = Some(Arc::new(code));
         let mut context = MockContext::new();
-        context
-            .balances
-            .insert(Address::from_low_u64_be(5), 1_000_000_000.into());
+        context.balances.insert(5.into(), 1_000_000_000.into());
         context.tracing = true;
 
         //let gas_left = {
@@ -1564,14 +1557,12 @@ mod tests {
         let code = "6001600160000360003e00".from_hex().unwrap();
 
         let mut params = ActionParams::default();
-        params.address = Address::from_low_u64_be(5);
+        params.address = 5.into();
         params.gas = 300_000.into();
         params.gas_price = 1.into();
         params.code = Some(Arc::new(code));
         let mut context = MockContext::new_spec();
-        context
-            .balances
-            .insert(Address::from_low_u64_be(5), 1_000_000_000.into());
+        context.balances.insert(5.into(), 1_000_000_000.into());
         context.tracing = true;
 
         let err = {

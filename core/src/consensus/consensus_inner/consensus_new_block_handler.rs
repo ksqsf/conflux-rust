@@ -24,7 +24,6 @@ use crate::{
 };
 use cfx_types::H256;
 use hibitset::{BitSet, BitSetLike, DrainableBitSet};
-use parity_bytes::ToPretty;
 use primitives::{
     BlockHeader, BlockHeaderBuilder, SignedTransaction, StateRootWithAuxInfo,
 };
@@ -706,7 +705,7 @@ impl ConsensusNewBlockHandler {
 
         let dump_dir = &self.conf.debug_dump_dir_invalid_state_root;
         let invalid_state_root_path =
-            dump_dir.clone() + &deferred_block_hash.to_hex();
+            dump_dir.clone() + &deferred_block_hash.hex();
         std::fs::create_dir_all(dump_dir)?;
 
         if std::path::Path::new(&invalid_state_root_path).exists() {

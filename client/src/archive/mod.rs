@@ -8,16 +8,7 @@ use super::{
 pub use crate::configuration::Configuration;
 use blockgen::BlockGenerator;
 
-use crate::rpc::{
-    extractor::RpcExtractor,
-    impls::{
-        cfx::RpcImpl, common::RpcImpl as CommonImpl, pubsub::PubSubClient,
-    },
-    setup_debug_rpc_apis, setup_public_rpc_apis,
-};
-use cfx_types::{Address, U256};
 use cfxcore::{
-    block_data_manager::BlockDataManager,
     genesis,
     state_exposer::{SharedStateExposer, StateExposer},
     statistics::Statistics,
@@ -28,6 +19,16 @@ use cfxcore::{
     ConsensusGraph, LightProvider, SynchronizationGraph,
     SynchronizationService, TransactionPool, WORKER_COMPUTATION_PARALLELISM,
 };
+
+use crate::rpc::{
+    extractor::RpcExtractor,
+    impls::{
+        cfx::RpcImpl, common::RpcImpl as CommonImpl, pubsub::PubSubClient,
+    },
+    setup_debug_rpc_apis, setup_public_rpc_apis,
+};
+use cfx_types::{Address, U256};
+use cfxcore::block_data_manager::BlockDataManager;
 use ctrlc::CtrlC;
 use db::SystemDB;
 use keylib::public_to_address;
@@ -173,7 +174,7 @@ impl ArchiveClient {
         let genesis_block = storage_manager.initialize(
             genesis_accounts,
             DEFAULT_MAX_BLOCK_GAS_LIMIT.into(),
-            Address::from_str(TESTNET_VERSION).unwrap(),
+            TESTNET_VERSION.into(),
             U256::zero(),
         );
         debug!("Initialize genesis_block={:?}", genesis_block);

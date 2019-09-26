@@ -243,7 +243,6 @@ impl Headers {
 #[cfg(test)]
 mod tests {
     use super::{super::common::PriorityQueue, HashSource, MissingHeader};
-    use cfx_types::H256;
     use rand::Rng;
     use std::{
         ops::Sub,
@@ -259,13 +258,13 @@ mod tests {
         let one_ms_ago = now.sub(Duration::from_millis(1));
 
         let h0 = MissingHeader {
-            hash: H256::from_low_u64_be(0),
+            hash: 0.into(),
             since: now,
             source: HashSource::Epoch,
         };
 
         let h1 = MissingHeader {
-            hash: H256::from_low_u64_be(1),
+            hash: 1.into(),
             since: one_ms_ago,
             source: HashSource::Epoch,
         };
@@ -273,7 +272,7 @@ mod tests {
         assert!(h0 < h1); // longer waiting time
 
         let h2 = MissingHeader {
-            hash: H256::from_low_u64_be(2),
+            hash: 2.into(),
             since: now,
             source: HashSource::Dependency,
         };
@@ -281,7 +280,7 @@ mod tests {
         assert!(h1 < h2); // higher source priority
 
         let h3 = MissingHeader {
-            hash: H256::from_low_u64_be(3),
+            hash: 3.into(),
             since: one_ms_ago,
             source: HashSource::Dependency,
         };
@@ -289,7 +288,7 @@ mod tests {
         assert!(h2 < h3); // longer waiting time
 
         let h4 = MissingHeader {
-            hash: H256::from_low_u64_be(4),
+            hash: 4.into(),
             since: now,
             source: HashSource::NewHash,
         };
@@ -297,7 +296,7 @@ mod tests {
         assert!(h3 < h4); // higher source priority
 
         let h5 = MissingHeader {
-            hash: H256::from_low_u64_be(5),
+            hash: 5.into(),
             since: one_ms_ago,
             source: HashSource::NewHash,
         };
@@ -305,7 +304,7 @@ mod tests {
         assert!(h4 < h5); // longer waiting time
 
         let h6 = MissingHeader {
-            hash: H256::from_low_u64_be(6),
+            hash: 6.into(),
             since: now,
             source: HashSource::NewHash,
         };
@@ -326,43 +325,43 @@ mod tests {
         let one_ms_ago = now.sub(Duration::from_millis(1));
 
         let h0 = MissingHeader {
-            hash: H256::from_low_u64_be(0),
+            hash: 0.into(),
             since: now,
             source: HashSource::Epoch,
         };
 
         let h1 = MissingHeader {
-            hash: H256::from_low_u64_be(1),
+            hash: 1.into(),
             since: one_ms_ago,
             source: HashSource::Epoch,
         };
 
         let h2 = MissingHeader {
-            hash: H256::from_low_u64_be(2),
+            hash: 2.into(),
             since: now,
             source: HashSource::Dependency,
         };
 
         let h3 = MissingHeader {
-            hash: H256::from_low_u64_be(3),
+            hash: 3.into(),
             since: one_ms_ago,
             source: HashSource::Dependency,
         };
 
         let h4 = MissingHeader {
-            hash: H256::from_low_u64_be(4),
+            hash: 4.into(),
             since: now,
             source: HashSource::NewHash,
         };
 
         let h5 = MissingHeader {
-            hash: H256::from_low_u64_be(5),
+            hash: 5.into(),
             since: one_ms_ago,
             source: HashSource::NewHash,
         };
 
         let h6 = MissingHeader {
-            hash: H256::from_low_u64_be(5),
+            hash: 5.into(),
             since: one_ms_ago,
             source: HashSource::NewHash,
         };

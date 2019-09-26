@@ -476,7 +476,7 @@ impl<'a> State<'a> {
                         }
                     }
                     Some(Some(AccountEntry { account: None, .. })) => {
-                        return Ok(Some(H256::zero()));
+                        return Ok(Some(H256::new()));
                     }
                     Some(None) => {
                         kind = Some(ReturnKind::OriginalAt);
@@ -627,7 +627,7 @@ mod tests {
         tests::new_state_manager_for_testing, SnapshotAndEpochIdRef,
         StorageManager, StorageManagerTrait,
     };
-    use cfx_types::{Address, BigEndianHash, U256};
+    use cfx_types::{Address, H256, U256};
 
     fn get_state(storage_manager: &StorageManager, epoch_id: EpochId) -> State {
         State::new(
@@ -696,38 +696,34 @@ mod tests {
         let storage_manager = new_state_manager_for_testing();
         let mut state = get_state_for_genesis_write(&storage_manager);
         let address = Address::zero();
-        let key = BigEndianHash::from_uint(&U256::from(0));
+        let key = H256::from(U256::from(0));
         let c0 = state.checkpoint();
         let c1 = state.checkpoint();
         state
-            .set_storage(
-                &address,
-                key,
-                BigEndianHash::from_uint(&U256::from(1)),
-            )
+            .set_storage(&address, key, H256::from(U256::from(1)))
             .unwrap();
 
         assert_eq!(
             state.checkpoint_storage_at(c0, &address, &key).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &address, &key).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.storage_at(&address, &key).unwrap(),
-            BigEndianHash::from_uint(&U256::from(1))
+            H256::from(U256::from(1))
         );
 
         state.revert_to_checkpoint();
         assert_eq!(
             state.checkpoint_storage_at(c0, &address, &key).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.storage_at(&address, &key).unwrap(),
-            BigEndianHash::from_uint(&U256::from(0))
+            H256::from(U256::from(0))
         );
     }
 
@@ -736,128 +732,122 @@ mod tests {
         let storage_manager = new_state_manager_for_testing();
         let mut state = get_state_for_genesis_write(&storage_manager);
         let a = Address::zero();
-        let k = BigEndianHash::from_uint(&U256::from(0));
-        let k2 = BigEndianHash::from_uint(&U256::from(1));
+        let k = H256::from(U256::from(0));
+        let k2 = H256::from(U256::from(1));
 
         assert_eq!(
             state.storage_at(&a, &k).unwrap(),
-            BigEndianHash::from_uint(&U256::from(0))
+            H256::from(U256::from(0))
         );
         state.clear();
 
         let c0 = state.checkpoint();
         state.new_contract(&a, U256::zero(), U256::zero()).unwrap();
         let c1 = state.checkpoint();
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(1)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(1))).unwrap();
         let c2 = state.checkpoint();
         let c3 = state.checkpoint();
         state
-            .set_storage(&a, k2, BigEndianHash::from_uint(&U256::from(3)))
+            .set_storage(&a, k2, H256::from(U256::from(3)))
             .unwrap();
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(3)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(3))).unwrap();
         let c4 = state.checkpoint();
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(4)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(4))).unwrap();
         let c5 = state.checkpoint();
 
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c3, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c4, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(3)))
+            Some(H256::from(U256::from(3)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c5, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(4)))
+            Some(H256::from(U256::from(4)))
         );
 
         state.discard_checkpoint(); // Commit/discard c5.
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c3, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c4, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(3)))
+            Some(H256::from(U256::from(3)))
         );
 
         state.revert_to_checkpoint(); // Revert to c4.
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c3, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
 
         state.discard_checkpoint(); // Commit/discard c3.
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
 
         state.revert_to_checkpoint(); // Revert to c2.
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
 
         state.discard_checkpoint(); // Commit/discard c1.
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
     }
 
@@ -866,24 +856,19 @@ mod tests {
         let storage_manager = new_state_manager_for_testing();
         let mut state = get_state_for_genesis_write(&storage_manager);
         let a = Address::zero();
-        let k = BigEndianHash::from_uint(&U256::from(0));
-        let k2 = BigEndianHash::from_uint(&U256::from(1));
+        let k = H256::from(U256::from(0));
+        let k2 = H256::from(U256::from(1));
 
         state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(0xffff)))
+            .set_storage(&a, k, H256::from(U256::from(0xffff)))
             .unwrap();
-        state
-            .commit(BigEndianHash::from_uint(&U256::from(1u64)))
-            .unwrap();
+        state.commit(H256::from(U256::from(1u64))).unwrap();
         state.clear();
 
-        state = get_state(
-            &storage_manager,
-            BigEndianHash::from_uint(&U256::from(1u64)),
-        );
+        state = get_state(&storage_manager, H256::from(U256::from(1u64)));
         assert_eq!(
             state.storage_at(&a, &k).unwrap(),
-            BigEndianHash::from_uint(&U256::from(0xffff))
+            H256::from(U256::from(0xffff))
         );
         state.clear();
 
@@ -891,140 +876,134 @@ mod tests {
         let c0 = state.checkpoint();
         state.new_contract(&a, U256::zero(), U256::zero()).unwrap();
         let c1 = state.checkpoint();
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(1)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(1))).unwrap();
         let c2 = state.checkpoint();
         let c3 = state.checkpoint();
         state
-            .set_storage(&a, k2, BigEndianHash::from_uint(&U256::from(3)))
+            .set_storage(&a, k2, H256::from(U256::from(3)))
             .unwrap();
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(3)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(3))).unwrap();
         let c4 = state.checkpoint();
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(4)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(4))).unwrap();
         let c5 = state.checkpoint();
 
         assert_eq!(
             state.checkpoint_storage_at(cm1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c3, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c4, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(3)))
+            Some(H256::from(U256::from(3)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c5, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(4)))
+            Some(H256::from(U256::from(4)))
         );
 
         state.discard_checkpoint(); // Commit/discard c5.
         assert_eq!(
             state.checkpoint_storage_at(cm1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c3, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c4, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(3)))
+            Some(H256::from(U256::from(3)))
         );
 
         state.revert_to_checkpoint(); // Revert to c4.
         assert_eq!(
             state.checkpoint_storage_at(cm1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c3, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
 
         state.discard_checkpoint(); // Commit/discard c3.
         assert_eq!(
             state.checkpoint_storage_at(cm1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c2, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(1)))
+            Some(H256::from(U256::from(1)))
         );
 
         state.revert_to_checkpoint(); // Revert to c2.
         assert_eq!(
             state.checkpoint_storage_at(cm1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0)))
+            Some(H256::from(U256::from(0)))
         );
 
         state.discard_checkpoint(); // Commit/discard c1.
         assert_eq!(
             state.checkpoint_storage_at(cm1, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
         assert_eq!(
             state.checkpoint_storage_at(c0, &a, &k).unwrap(),
-            Some(BigEndianHash::from_uint(&U256::from(0xffff)))
+            Some(H256::from(U256::from(0xffff)))
         );
     }
 
@@ -1033,22 +1012,20 @@ mod tests {
         let storage_manager = new_state_manager_for_testing();
         let mut state = get_state_for_genesis_write(&storage_manager);
         let a = Address::zero();
-        let k = BigEndianHash::from_uint(&U256::from(0));
+        let k = H256::from(U256::from(0));
         state.checkpoint();
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(1)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(1))).unwrap();
         state.checkpoint();
         state.kill_account(&a);
 
         assert_eq!(
             state.storage_at(&a, &k).unwrap(),
-            BigEndianHash::from_uint(&U256::from(0))
+            H256::from(U256::from(0))
         );
         state.revert_to_checkpoint();
         assert_eq!(
             state.storage_at(&a, &k).unwrap(),
-            BigEndianHash::from_uint(&U256::from(1))
+            H256::from(U256::from(1))
         );
     }
 
@@ -1056,7 +1033,7 @@ mod tests {
     fn create_contract_fail() {
         let storage_manager = new_state_manager_for_testing();
         let mut state = get_state_for_genesis_write(&storage_manager);
-        let a = Address::from_low_u64_be(1000);
+        let a: Address = 1000.into();
 
         state.checkpoint(); // c1
         state.new_contract(&a, U256::zero(), U256::zero()).unwrap();
@@ -1071,55 +1048,44 @@ mod tests {
         state.revert_to_checkpoint(); // revert to c1
         assert_eq!(state.exists(&a).unwrap(), false);
 
-        state
-            .commit(BigEndianHash::from_uint(&U256::from(1)))
-            .unwrap();
+        state.commit(H256::from(U256::from(1))).unwrap();
     }
 
     #[test]
     fn create_contract_fail_previous_storage() {
         let storage_manager = new_state_manager_for_testing();
         let mut state = get_state_for_genesis_write(&storage_manager);
-        let a = Address::from_low_u64_be(1000);
-        let k = BigEndianHash::from_uint(&U256::from(0));
+        let a: Address = 1000.into();
+        let k = H256::from(U256::from(0));
 
         state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(0xffff)))
+            .set_storage(&a, k, H256::from(U256::from(0xffff)))
             .unwrap();
-        state
-            .commit(BigEndianHash::from_uint(&U256::from(1)))
-            .unwrap();
+        state.commit(H256::from(U256::from(1))).unwrap();
         state.clear();
 
         assert_eq!(
             state.storage_at(&a, &k).unwrap(),
-            BigEndianHash::from_uint(&U256::from(0xffff))
+            H256::from(U256::from(0xffff))
         );
         state.clear();
-        state = get_state(
-            &storage_manager,
-            BigEndianHash::from_uint(&U256::from(1)),
-        );
+        state = get_state(&storage_manager, H256::from(U256::from(1)));
 
         state.checkpoint(); // c1
         state.new_contract(&a, U256::zero(), U256::zero()).unwrap();
         state.checkpoint(); // c2
-        state
-            .set_storage(&a, k, BigEndianHash::from_uint(&U256::from(2)))
-            .unwrap();
+        state.set_storage(&a, k, H256::from(U256::from(2))).unwrap();
         state.revert_to_checkpoint(); // revert to c2
         assert_eq!(
             state.storage_at(&a, &k).unwrap(),
-            BigEndianHash::from_uint(&U256::from(0))
+            H256::from(U256::from(0))
         );
         state.revert_to_checkpoint(); // revert to c1
         assert_eq!(
             state.storage_at(&a, &k).unwrap(),
-            BigEndianHash::from_uint(&U256::from(0xffff))
+            H256::from(U256::from(0xffff))
         );
 
-        state
-            .commit(BigEndianHash::from_uint(&U256::from(2)))
-            .unwrap();
+        state.commit(H256::from(U256::from(2))).unwrap();
     }
 }

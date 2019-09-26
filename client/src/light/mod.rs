@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cfx_types::{Address, U256};
+use cfx_types::U256;
 use ctrlc::CtrlC;
 use db::SystemDB;
 use lengine::Engine;
@@ -18,14 +18,6 @@ use parking_lot::{Condvar, Mutex};
 use secret_store::SecretStore;
 use threadpool::ThreadPool;
 
-use crate::{
-    configuration::Configuration,
-    rpc::{
-        extractor::RpcExtractor,
-        impls::{common::RpcImpl as CommonImpl, light::RpcImpl},
-        setup_debug_rpc_apis_light, setup_public_rpc_apis_light,
-    },
-};
 use cfxcore::{
     block_data_manager::BlockDataManager,
     genesis,
@@ -37,7 +29,15 @@ use cfxcore::{
     ConsensusGraph, LightQueryService, SynchronizationGraph, TransactionPool,
     WORKER_COMPUTATION_PARALLELISM,
 };
-use std::str::FromStr;
+
+use crate::{
+    configuration::Configuration,
+    rpc::{
+        extractor::RpcExtractor,
+        impls::{common::RpcImpl as CommonImpl, light::RpcImpl},
+        setup_debug_rpc_apis_light, setup_public_rpc_apis_light,
+    },
+};
 
 use super::{
     http::Server as HttpServer, tcp::Server as TcpServer, TESTNET_VERSION,
@@ -157,7 +157,7 @@ impl LightClient {
         let genesis_block = storage_manager.initialize(
             genesis_accounts,
             DEFAULT_MAX_BLOCK_GAS_LIMIT.into(),
-            Address::from_str(TESTNET_VERSION).unwrap(),
+            TESTNET_VERSION.into(),
             U256::zero(),
         );
         debug!("Initialize genesis_block={:?}", genesis_block);
