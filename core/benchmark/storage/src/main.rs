@@ -2069,7 +2069,6 @@ use std::{
     marker::{Send, Sync},
     mem,
     ops::{Deref, Shr},
-    path::Path,
     slice,
     sync::{
         atomic::{AtomicUsize, Ordering},

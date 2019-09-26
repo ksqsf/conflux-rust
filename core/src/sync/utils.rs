@@ -16,8 +16,7 @@ use crate::{
     vm_factory::VmFactory,
     ConsensusGraph, TransactionPool,
 };
-use cfx_types::{Address, H256, U256};
-use core::str::FromStr;
+use cfx_types::{H256, U256};
 use lengine::*;
 use parking_lot::Mutex;
 use primitives::{Block, BlockHeaderBuilder};
