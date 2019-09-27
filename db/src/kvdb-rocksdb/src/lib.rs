@@ -238,6 +238,8 @@ fn col_config(
     opts.optimize_level_style_compaction(config.memory_budget_per_col());
     opts.set_target_file_size_base(config.compaction.initial_file_size);
 
+    // FIXME(mk) does this actually compress?
+    // set_compression_type Default: DBCompressionType::None
     opts.set_compression_per_level(&[]);
 
     Ok(opts)
